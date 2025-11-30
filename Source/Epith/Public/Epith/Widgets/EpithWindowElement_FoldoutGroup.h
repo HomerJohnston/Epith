@@ -10,5 +10,5 @@ struct FEpithWindowElement_FoldoutGroup : public FEpithWindowElement
 {
 	GENERATED_BODY()
 	
-//	TSharedPtr<SWidget> Draw() const override;
+	//TSharedPtr<SWidget> Draw() const override;
 };

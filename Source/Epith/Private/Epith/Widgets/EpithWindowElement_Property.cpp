@@ -18,10 +18,19 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithProperty
 	if (CategoryData)
 	{
 		TSharedPtr<IPropertyHandle>* PropertyHandle = CategoryData->Get()->PropertyHandles.Find(Property);
+		TSharedPtr<IDetailTreeNode>* TreeNode = CategoryData->Get()->TreeNodes.Find(Property);
 		
-		if (PropertyHandle && PropertyHandle->IsValid())
+		FNodeWidgets Widgets = TreeNode->Get()->CreateNodeWidgets();
+
+		TSharedPtr<SWidget> Row;
+		
+		if (Widgets.WholeRowWidget)
 		{
-			return SNew(SHorizontalBox)
+			Row = Widgets.WholeRowWidget;
+		}
+		else
+		{
+			Row = SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			[
@@ -32,6 +41,42 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithProperty
 			[
 				PropertyHandle->Get()->CreatePropertyValueWidgetWithCustomization(nullptr)
 			];
+		}
+		
+		uint32 NumChildren;
+		TArray<TSharedRef<IDetailTreeNode>> TreeNodeChildren;
+		TreeNode->Get()->GetChildren(TreeNodeChildren);
+		NumChildren = TreeNodeChildren.Num();
+		
+		if (PropertyHandle && PropertyHandle->IsValid())
+		{
+			TSharedPtr<SVerticalBox> PropertyAndChildrenBox = SNew(SVerticalBox);
+			
+			PropertyAndChildrenBox->AddSlot()
+			[
+				Row.ToSharedRef()
+			];
+			
+			for (uint32 i = 0; i < NumChildren; ++i)
+			{
+				PropertyAndChildrenBox->AddSlot()
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					[
+						PropertyHandle->Get()->GetChildHandle(i).Get()->CreatePropertyNameWidget()
+					]
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					[
+						PropertyHandle->Get()->GetChildHandle(i).Get()->CreatePropertyValueWidgetWithCustomization(nullptr)
+					]
+				];
+				
+			}
+			
+			return PropertyAndChildrenBox;
 		}
 		else
 		{
