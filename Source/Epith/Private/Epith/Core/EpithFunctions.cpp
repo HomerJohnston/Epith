@@ -3,45 +3,23 @@
 #include "Epith/EpithLog.h"
 #include "Epith/Subsystems/EpithEditorSubsystem.h"
 
-Epith::ScopeContext::ScopeContext(const UClass* InClass)
+/*
+TSharedPtr<FEpithWindowElement> Epith::BeginLayout(UClass* Class)
 {
-	Epith::SetOperatingClass(InClass);
-}
-
-Epith::ScopeContext::~ScopeContext()
-{
-	Epith::SetOperatingClass(nullptr);
-}
-
-const TArray<FName> Epith::EpithAttributeNames
-{
-	TEXT("TabGroup"),
-	TEXT("BoxGroup"),
-	TEXT("FoldoutGroup")
-};
-
-const UClass* Epith::__OperatingClass;
-
-void Epith::SetOperatingClass(const UClass* Class)
-{
-	__OperatingClass = Class;
-}
-
-void Epith::Set(EEpithAttribute Attribute, FString AttributeMetaData, FName Property)
-{
-	if (!__OperatingClass)
+	if (!Class)
 	{
-		UE_LOG(LogEpith, Error, TEXT("You need to set the Epith::CurrentClass"))
-		return;
+		UE_LOG(LogEpith, Error, TEXT("You need to set a Class!"))
+		return nullptr;
 	}
 	
 	if (!GEditor)
 	{
-		// TODO log error
-		return;
+		UE_LOG(LogEpith, Error, TEXT("Couldn't find GEditor!"))
+		return nullptr;
 	}
 	
 	UEpithEditorSubsystem* Subsystem = GEditor->GetEditorSubsystem<UEpithEditorSubsystem>();
 	
-	Subsystem->SetAttributeMetaData(__OperatingClass, Property, GetAttributeFName(Attribute), AttributeMetaData);
+	return Subsystem->BeginLayout(Class);
 }
+*/

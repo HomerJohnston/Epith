@@ -22,6 +22,8 @@ struct FEpithBrushes
 	FName Icon_Plunger_Dim;
 	FName Icon_PortalIn;
 	FName Icon_PortalOut;
+	
+	FName Border_2px_Deburred;
 };
 
 struct FEpithStyles

@@ -1,36 +1,27 @@
 ﻿#pragma once
 
-enum class EEpithAttribute : uint8
+enum class EEpithWindowElementType : uint8
 {
+	Parent,
+	VerticalGroup,
+	HorizontalGroup,
 	TabGroup,
-	BoxGroup,
 	FoldoutGroup,
+	Property,
 };
 
 
 struct EPITH_API Epith
 {
 public:
-	static void Set(EEpithAttribute Attribute, FString AttributeMetaData, FName Property);
+	//static TSharedPtr<FEpithWindowElement> BeginLayout(UClass* Class);
 	
-	struct EPITH_API ScopeContext
-	{
-		ScopeContext(const UClass* InClass);
-
-		~ScopeContext();
-	};
-	
+	//static void SetGroup(FName Property, FName GroupName);
+		
 private:
-	static const TArray<FName> EpithAttributeNames;
+	//static const TArray<FName> EpithAttributeNames;
 	
-	static const UClass* __OperatingClass;
-	
-	static void SetOperatingClass(const UClass* Class);
-	
-	static FName GetAttributeFName(EEpithAttribute Attribute)
-	{
-		return EpithAttributeNames[(uint8)Attribute];
-	}
+	//static void SetOperatingClass(const UClass* Class);
 };
 
-using enum EEpithAttribute;
+using enum EEpithWindowElementType;

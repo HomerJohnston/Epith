@@ -1,24 +1,11 @@
 ﻿#pragma once
 
+#include "StructUtils/InstancedStruct.h"
+
 #include "EpithEditorSubsystem.generated.h"
 
 class UEpithEditorWorldExtension;
-
-struct FEpithPropertyDefinition
-{
-	FName EpithAttribute;
-	FString AttributeMetaData;
-};
-
-struct FEpithClassDefinition
-{
-	TMap<FName, FEpithPropertyDefinition> PropertyMetaDatas;
-};
-
-struct FEpithProgramDefinition
-{
-	TMap<const UClass*, FEpithClassDefinition> ClassMetaDatas;
-};
+struct FEpithWindowElement;
 
 UCLASS()
 class UEpithEditorSubsystem : public UEditorSubsystem
@@ -33,11 +20,4 @@ class UEpithEditorSubsystem : public UEditorSubsystem
 	
 	UPROPERTY()
 	TObjectPtr<UEpithEditorWorldExtension> WorldExtension;
-	
-	FEpithProgramDefinition Definitions;
-	
-public:
-	void SetAttributeMetaData(const UClass* Class, FName PropertyName, FName EpithAttribute, FString AttributeMetaData);
-	
-	FEpithClassDefinition* GetClassAttributeSet(const UClass* Class);
 };

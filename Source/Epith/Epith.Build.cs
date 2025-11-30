@@ -27,7 +27,7 @@ public class Epith : ModuleRules
 		PublicDependencyModuleNames.AddRange(
 			new string[]
 			{
-				"Core",
+				"Core", "AssetTools",
 				// ... add other public dependencies that you statically link with here ...
 			}
 			);
@@ -42,7 +42,9 @@ public class Epith : ModuleRules
 				"SlateCore",
 				"EditorSubsystem",
 				"UnrealEd",
-				"Projects"
+				"Projects",
+				"DeveloperSettings",
+				"AssetDefinition"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

@@ -2,7 +2,12 @@
 
 #include "Epith/Module/Epith.h"
 
+#include "AssetTypeCategories.h"
+
 #define LOCTEXT_NAMESPACE "FEpithModule"
+
+EAssetTypeCategories::Type FEpithModule::EpithAssetCategory = static_cast<EAssetTypeCategories::Type>(0);
+FAssetCategoryPath FEpithAssetCategoryPaths::Epith(LOCTEXT("Epith", "Epith"));
 
 void FEpithModule::StartupModule()
 {

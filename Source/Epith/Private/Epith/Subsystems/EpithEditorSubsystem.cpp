@@ -2,7 +2,9 @@
 
 #include "EditorWorldExtension.h"
 #include "LevelEditor.h"
+#include "AssetRegistry/AssetRegistryModule.h"
 #include "Epith/EpithLog.h"
+#include "Epith/EpithPanelDefinition.h"
 #include "Epith/EditorWorldExtensions/EpithEditorWorldExtension.h"
 #include "Epith/Interfaces/IEpithActorInterface.h"
 
@@ -19,8 +21,6 @@ void UEpithEditorSubsystem::OnEditorInitialized(double StartupTime)
 	for (TObjectIterator<UClass> It; It; ++It)
 	{
 		UClass* Class = *It;
-		
-		UE_LOG(LogEpith, Display, TEXT("%s"), *Class->GetName());
 		
 		if (IEpithActorInterface* EpithInterface = Cast<IEpithActorInterface>(Class->GetDefaultObject<UObject>()))
 		{
@@ -41,25 +41,4 @@ void UEpithEditorSubsystem::OnPostWorldInitialization(UWorld* World, const UWorl
 	UEditorWorldExtensionCollection* ExtensionCollection = ExtensionManager->GetEditorWorldExtensions(World);
 
 	ExtensionCollection->AddExtension(WorldExtension);
-}
-
-void UEpithEditorSubsystem::SetAttributeMetaData(const UClass* Class, FName PropertyName, FName EpithAttribute, FString AttributeMetaData)
-{
-	FEpithClassDefinition& ClassDefinition = Definitions.ClassMetaDatas.FindOrAdd(Class);
-	
-	FEpithPropertyDefinition& PropertyDefinition = ClassDefinition.PropertyMetaDatas.FindOrAdd(PropertyName);
-	
-	if (PropertyDefinition.EpithAttribute != NAME_None)
-	{
-		UE_LOG(LogEpith, Warning, TEXT("Overwriting existing property attribute! UClass: %s, PropertyName: %s, Attribute: %s, Old MetaData: %s, New MetaData: %s"), 
-			*Class->GetName(), *PropertyName.ToString(), *EpithAttribute.ToString(), *PropertyDefinition.AttributeMetaData, *AttributeMetaData);
-	}
-	
-	PropertyDefinition.EpithAttribute = EpithAttribute;
-	PropertyDefinition.AttributeMetaData = AttributeMetaData;
-}
-
-FEpithClassDefinition* UEpithEditorSubsystem::GetClassAttributeSet(const UClass* Class)
-{
-	return Definitions.ClassMetaDatas.Find(Class);
 }

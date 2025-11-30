@@ -1,6 +1,15 @@
 ﻿#pragma once
 
-class FEpithWindowElement
+#include "StructUtils/InstancedStruct.h"
+
+#include "EpithWindowElement.generated.h"
+
+struct FEpithPropertyDataContainer;
+
+USTRUCT(meta = (Hidden))
+struct FEpithWindowElement
 {
-	TArray<TSharedPtr<FEpithWindowElement>> Children;
+	GENERATED_BODY()
+
+	virtual TSharedPtr<SWidget> Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const { return nullptr; }
 };

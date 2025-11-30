@@ -2,7 +2,8 @@
 
 #include "Widgets/SUserWidget.h"
 
-struct FEpithClassDefinition;
+struct FEpithPropertyDataContainer;
+struct FEpithWindowElement;
 class UBangoTargetCollector;
 class UBangoTargetGroup;
 class AEpith;
@@ -12,24 +13,7 @@ class AEpith;
 class FEpithViewportPopup
 {
 public:
-	static void Show(AActor* Target, FEpithClassDefinition* AttributeSet);
-
-	static TSharedRef<SWidget> BuildProperties(AActor* Target, FEpithClassDefinition* AttributeSet);
-	
-	static TSharedRef<SWidget> BuildTabGroup();
-
-	void Test(TSharedRef<SDockTab> DockTab, ETabActivationCause TabActivationCause);
-	
-	static TSharedRef<SWidget> BuildTabHeader(TArray<FText> Tabs);
-	
-	static TSharedRef<SWidget> BuildTabPane();
-	
-	static TSharedRef<SWidget> BuildBoxGroup();
-	
-	static TSharedRef<SWidget> BuildFoldoutGroup();
-	
-	
-	static TSharedRef<SWidget> BuildDummyPane(FText Text);
+	static bool Show(AActor* Target, const FEpithWindowElement& RootWindowElement);
 };
 
 #undef LOCTEXT_NAMESPACE

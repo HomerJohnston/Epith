@@ -220,6 +220,8 @@ void FEpithStyle::SetupStyles()
 	EPITH_DEFINE_BRUSH(FSlateVectorImageBrush,	Icon_PortalIn,						"NodeIcons/Icon_PortalIn", ".svg",				FVector2f(20, 20), EpithColor::White);
 	EPITH_DEFINE_BRUSH(FSlateVectorImageBrush,	Icon_PortalOut,						"NodeIcons/Icon_PortalOut", ".svg",				FVector2f(20, 20), EpithColor::White);
 	
+	EPITH_DEFINE_BRUSH(FSlateBorderBrush,		Border_2px_Deburred,				"Border_2px_Deburred", ".png",					FMargin(0.5f, 0.5f), EpithColor::White);
+	
 	// ============================================================================================
 	// SLIDER STYLES
 	// ============================================================================================
