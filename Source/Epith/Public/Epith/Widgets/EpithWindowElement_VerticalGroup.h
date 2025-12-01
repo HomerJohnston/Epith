@@ -9,13 +9,10 @@ struct FEpithWindowElement_VerticalGroup_Slot
 {
 	GENERATED_BODY()
 	
-	UPROPERTY(EditDefaultsOnly)
-	bool bHideBorder = false;
+	UPROPERTY(EditDefaultsOnly, DisplayName = "Slot Appearance")
+	FEpithWindowElement_BoxDisplayParams DisplayParams;
 	
-	UPROPERTY(EditDefaultsOnly, meta = (ClampMin = 0, ClampMax = 24, UIMin = 0, UIMax = 24))
-	uint8 Padding = 8;
-	
-	UPROPERTY(EditDefaultsOnly, meta = (ShowOnlyInnerProperties, ExcludeBaseStruct))
+	UPROPERTY(EditDefaultsOnly, DisplayName = "Element", meta = (ShowOnlyInnerProperties, ExcludeBaseStruct))
 	TInstancedStruct<FEpithWindowElement> Child;
 };
 
@@ -28,6 +25,6 @@ struct FEpithWindowElement_VerticalGroup : public FEpithWindowElement
 	
 	TSharedPtr<SWidget> Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const override;
 	
-	UPROPERTY(EditDefaultsOnly, meta = (ExcludeBaseStruct))
+	UPROPERTY(EditDefaultsOnly, DisplayName = "Vertical Group Slots", meta = (ExcludeBaseStruct))
 	TArray<FEpithWindowElement_VerticalGroup_Slot> Slots;
 };

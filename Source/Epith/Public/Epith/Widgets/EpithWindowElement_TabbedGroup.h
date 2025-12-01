@@ -22,6 +22,6 @@ struct FEpithWindowElement_TabbedGroup : public FEpithWindowElement
 	
 	TSharedPtr<SWidget> Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const override;
 	
-	UPROPERTY(EditDefaultsOnly, meta = (ExcludeBaseStruct))
+	UPROPERTY(EditDefaultsOnly, DisplayName = "Tabbed Group Slots",meta = (ExcludeBaseStruct))
 	TArray<FEpithWindowElement_TabbedGroup_Slot> Slots;
 };

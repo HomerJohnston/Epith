@@ -11,6 +11,8 @@ class EPITH_API UEpithPanelDefinition : public UObject
 {
 	GENERATED_BODY()
 	
+	friend class FPropertyTypeCustomization_EpithPropertySelector;
+	
 protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Epith")
 	TSubclassOf<AActor> TargetActorType;

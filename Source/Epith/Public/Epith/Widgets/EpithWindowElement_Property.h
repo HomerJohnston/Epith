@@ -9,11 +9,7 @@ USTRUCT(DisplayName = "Property")
 struct FEpithWindowElement_Property : public FEpithWindowElement
 {
 	GENERATED_BODY()
-	
-	/** If unspecified, uses the actor name (default category). */
-	UPROPERTY(EditDefaultsOnly)
-	FName Category;
-	
+		
 	/** Property Path (this is just an FName; it is not bound to anything and will simply stop pointing to a property if the property is removed or renamed). */
 	UPROPERTY(EditDefaultsOnly)
 	FEpithPropertySelector PropertySelector;

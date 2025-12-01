@@ -6,6 +6,18 @@
 
 struct FEpithPropertyDataContainer;
 
+USTRUCT()
+struct FEpithWindowElement_BoxDisplayParams
+{
+	GENERATED_BODY()
+	
+	UPROPERTY(EditDefaultsOnly)
+	bool bHideBorder = false;
+	
+	UPROPERTY(EditDefaultsOnly, meta = (ClampMin = 0, ClampMax = 40, UIMin = 0, UIMax = 20))
+	uint8 Padding = 8;
+};
+
 USTRUCT(meta = (Hidden))
 struct FEpithWindowElement
 {

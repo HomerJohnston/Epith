@@ -34,7 +34,12 @@ void SEpithTabbedPane::Construct(const FArguments& InArgs)
 		+ SVerticalBox::Slot()
 		.AutoHeight()
 		[
-			Panes
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("Menu.Background"))
+			.Padding(4, 4, 4, 4)
+			[
+				Panes
+			]
 		]
 	];
 

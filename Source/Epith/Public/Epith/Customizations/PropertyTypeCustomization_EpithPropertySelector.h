@@ -7,7 +7,6 @@ class FPropertyTypeCustomization_EpithPropertySelector : public IPropertyTypeCus
 public:
 	static TSharedRef<IPropertyTypeCustomization> MakeInstance() { return MakeShared<FPropertyTypeCustomization_EpithPropertySelector>(); }
 	
-	TSharedPtr<IPropertyHandle> ObjectProperty;
 	TSharedPtr<IPropertyHandle> PropertyPathProperty;
 	
 	void CustomizeHeader(TSharedRef<IPropertyHandle> PropertyHandle, FDetailWidgetRow& HeaderRow, IPropertyTypeCustomizationUtils& CustomizationUtils) override;

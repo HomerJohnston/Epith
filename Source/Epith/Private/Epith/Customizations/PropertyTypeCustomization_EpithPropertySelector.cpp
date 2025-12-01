@@ -2,35 +2,14 @@
 
 #include "DetailWidgetRow.h"
 #include "IDetailChildrenBuilder.h"
+#include "Epith/EpithPanelDefinition.h"
 #include "Epith/Misc/EpithPropertyDataContainer.h"
 #include "Epith/Misc/EpithPropertySelector.h"
 
 void FPropertyTypeCustomization_EpithPropertySelector::CustomizeHeader(TSharedRef<IPropertyHandle> PropertyHandle, FDetailWidgetRow& HeaderRow, IPropertyTypeCustomizationUtils& CustomizationUtils)
 {
-	ObjectProperty = PropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FEpithPropertySelector, Object));
 	PropertyPathProperty = PropertyHandle->GetChildHandle(GET_MEMBER_NAME_CHECKED(FEpithPropertySelector, PropertyPath));
 	
-	HeaderRow.NameContent()
-	[
-		ObjectProperty->CreatePropertyNameWidget()
-	];
-	
-	HeaderRow.ValueContent()
-	[
-		ObjectProperty->CreatePropertyValueWidgetWithCustomization(nullptr)
-	];
-}
-
-void FPropertyTypeCustomization_EpithPropertySelector::CustomizeChildren(TSharedRef<IPropertyHandle> PropertyHandle, IDetailChildrenBuilder& ChildBuilder, IPropertyTypeCustomizationUtils& CustomizationUtils)
-{
-	UObject* Object = nullptr;
-	ObjectProperty->GetValue(Object);
-	
-	if (!Object)
-	{
-		return;
-	}
-		
 	TSharedRef<SWidget> Selector = SNew(SComboButton)
 		.OnGetMenuContent(this, &FPropertyTypeCustomization_EpithPropertySelector::OnGetMenuContent_PropertyName)
 		.ContentPadding(0)
@@ -45,7 +24,7 @@ void FPropertyTypeCustomization_EpithPropertySelector::CustomizeChildren(TShared
 			} )
 		];
 	
-	ChildBuilder.AddCustomRow(INVTEXT("None"))
+	HeaderRow
 	.NameContent()
 	[
 		PropertyPathProperty->CreatePropertyNameWidget()
@@ -56,14 +35,34 @@ void FPropertyTypeCustomization_EpithPropertySelector::CustomizeChildren(TShared
 	];
 }
 
+void FPropertyTypeCustomization_EpithPropertySelector::CustomizeChildren(TSharedRef<IPropertyHandle> PropertyHandle, IDetailChildrenBuilder& ChildBuilder, IPropertyTypeCustomizationUtils& CustomizationUtils)
+{
+}
+
 TSharedRef<SWidget> FPropertyTypeCustomization_EpithPropertySelector::OnGetMenuContent_PropertyName()
 {	
 	FMenuBuilder MenuBuilder(true, nullptr);
 	
-	UObject* Object = nullptr;
-	ObjectProperty->GetValue(Object);
+	const UClass* Class = PropertyPathProperty->GetOuterBaseClass();
 	
-	FEpithPropertyDataContainer PropertyData(Object);
+	if (Class != UEpithPanelDefinition::StaticClass())
+	{
+		return SNew(STextBlock)
+			.Text(INVTEXT("At this time, this struct only works when used in a child of UEpithPanelDefinition. Sorry!"));
+	}
+
+	TArray<UObject*> Outers;
+	PropertyPathProperty->GetOuterObjects(Outers);
+	
+	if (Outers.Num() != 1)
+	{
+		return SNew(STextBlock)
+			.Text(INVTEXT("Unknown error!"));
+	}
+	
+	UEpithPanelDefinition* PanelDefinition = Cast<UEpithPanelDefinition>(Outers[0]);	
+	
+	FEpithPropertyDataContainer PropertyData(PanelDefinition->GetTargetActorType());
 
 	using FClassPropertyHandles = TMap<FName, TSharedPtr<IPropertyHandle>>;
 	
