@@ -3,50 +3,65 @@
 #include "IPropertyRowGenerator.h"
 #include "Epith/EpithLog.h"
 
-FEpithPropertyDataContainer::FEpithPropertyDataContainer(AActor* Target)
+FEpithPropertyDataContainer::FEpithPropertyDataContainer(UObject* Target)
 {
-	DefaultCategory = Target->GetClass()->GetFName();
-	
 	Build(Target);
 }
 
-void FEpithPropertyDataContainer::Build(AActor* Actor)
+void FEpithPropertyDataContainer::Build(UObject* Actor)
 {
 	static const FName PropertyEditorName = "PropertyEditor";
-	static const FName CategoryName = "TransformCommon";
-	static const FName LocationName = "Location";
-	static const FName RotationName = "Rotation";
-	static const FName ScaleName = "Scale";
 
 	FPropertyEditorModule& PropertyEditor = FModuleManager::Get().LoadModuleChecked<FPropertyEditorModule>(PropertyEditorName);
 	PropertyRowGenerator = PropertyEditor.CreatePropertyRowGenerator(FPropertyRowGeneratorArgs());
 	PropertyRowGenerator->SetObjects( { Actor } );
 
-	for (const TSharedRef<IDetailTreeNode>& CategoryNode : PropertyRowGenerator->GetRootTreeNodes())
+	TArray<TSharedRef<IDetailTreeNode>> TreeNodes;
+
+	TArray<TSharedRef<IDetailTreeNode>> PendingTreeNodes;
+	
+	PendingTreeNodes = PropertyRowGenerator->GetRootTreeNodes();
+
+	TArray<FName> CategoryStack;
+	
+	while (PendingTreeNodes.Num() > 0)
 	{
-		TArray<TSharedRef<IDetailTreeNode>> ChildNodes;
-		CategoryNode->GetChildren(ChildNodes);
-
-		if (Categories.IsEmpty())
+		const TSharedRef<IDetailTreeNode> PoppedNode = PendingTreeNodes.Pop(EAllowShrinking::No);
+		
+		GatherChildDetailTreeNodesRecursive(PoppedNode, PendingTreeNodes);
+		
+		if (PoppedNode->GetNodeType() == EDetailNodeType::Item)
 		{
-			DefaultCategory = CategoryNode->GetNodeName();
-		}
-		
-		TSharedPtr<FEpithPropertyCategoryContainer> CategoryData = Categories.Add(CategoryNode->GetNodeName(), MakeShared<FEpithPropertyCategoryContainer>());
-		
-		for (const TSharedRef<IDetailTreeNode>& ChildNode : ChildNodes)
-		{	
-			const FName NodeName = ChildNode->GetNodeName();
-
-			TSharedPtr<IPropertyHandle> NewHandle = ChildNode->CreatePropertyHandle();
-			ensure(NewHandle.IsValid() && NewHandle->IsValidHandle());
+			TSharedPtr<IPropertyHandle> PropertyHandle = PoppedNode->CreatePropertyHandle();
 			
-			CategoryData->TreeNodes.Add(NodeName, ChildNode);
-			CategoryData->PropertyHandles.Add(NodeName, NewHandle);
+			if (!PropertyHandle)
+			{
+				UE_LOG(LogEpith, Display, TEXT("Null property handle for IDetailTreeNode: %s"), *PoppedNode->GetNodeName().ToString());
+				continue;
+			}
+			// TODO does GeneratePathToProperty ever generate invalid characters?
+			FName PathToProperty = FName(PropertyHandle->GeneratePathToProperty());
 			
-			UE_LOG(LogEpith, Display, TEXT("Found, Category: %s, Property: %s"), *CategoryNode->GetNodeName().ToString(), *NodeName.ToString());
+			AllTreeNodes.Add(PathToProperty, PoppedNode);
+			AllPropertyHandles.Add(PathToProperty, PropertyHandle);
+			
+			TreeNodes.Add(PoppedNode);
 		}
-
-		break;
 	}
+	
+	UE_LOG(LogEpith, Display, TEXT("All done"));
+}
+
+void FEpithPropertyDataContainer::GatherChildDetailTreeNodesRecursive(TSharedRef<IDetailTreeNode> ParentTreeNode, TArray<TSharedRef<IDetailTreeNode>>& PendingTreeNodes)
+{
+	TArray<TSharedRef<IDetailTreeNode>> Children;
+	
+	ParentTreeNode->GetChildren(Children);
+	
+	for (const TSharedRef<IDetailTreeNode> Child : Children)
+	{
+		GatherChildDetailTreeNodesRecursive(Child, PendingTreeNodes);
+	}
+
+	PendingTreeNodes.Append(Children);
 }

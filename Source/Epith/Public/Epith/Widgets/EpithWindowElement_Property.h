@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "EpithWindowElement.h"
+#include "Epith/Misc/EpithPropertySelector.h"
 
 #include "EpithWindowElement_Property.generated.h"
 
@@ -9,13 +10,15 @@ struct FEpithWindowElement_Property : public FEpithWindowElement
 {
 	GENERATED_BODY()
 	
-	/** If unspecified, uses the actor name (default category) */
+	/** If unspecified, uses the actor name (default category). */
 	UPROPERTY(EditDefaultsOnly)
 	FName Category;
 	
-	/** Property name on the actor */
+	/** Property Path (this is just an FName; it is not bound to anything and will simply stop pointing to a property if the property is removed or renamed). */
 	UPROPERTY(EditDefaultsOnly)
-	FName Property;
+	FEpithPropertySelector PropertySelector;
 	
 	TSharedPtr<SWidget> Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const override;
+	
+	void RecursiveDrawRowChildren(TSharedPtr<FEpithPropertyDataContainer> InPropertyData, TSharedPtr<IDetailTreeNode> TreeNode, TArray<TSharedRef<SWidget>>& Widgets);
 };
