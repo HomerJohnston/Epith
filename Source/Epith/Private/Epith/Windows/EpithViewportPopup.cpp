@@ -14,11 +14,19 @@
 
 bool FEpithViewportPopup::Show(AActor* Target, const FEpithWindowElement& RootWindowElement)
 {
+	if (!IsValid(Target))
+	{
+		return false;
+	}
+	
 	FVector2D ScreenPos(800, 400);
 	
 	TSharedPtr<FEpithPropertyDataContainer> PropertyData = MakeShared<FEpithPropertyDataContainer>(Target);
 	
+	FText Title = FText::FromString(Target->GetActorLabel() + " Properties");
+	
 	TSharedPtr<SWidget> Widget = SNew(SEpithActorPane)
+		.Title(Title)
 		.PropertyData(PropertyData)
 		.Root(&RootWindowElement);
 	

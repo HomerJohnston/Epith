@@ -5,9 +5,21 @@
 #include "EpithWindowElement_TabbedGroup.generated.h"
 
 USTRUCT()
+struct FEpithWindowElement_TabbedGroup_SlotDisplayParams
+{
+	GENERATED_BODY()
+};
+
+USTRUCT()
 struct FEpithWindowElement_TabbedGroup_Slot
 {
 	GENERATED_BODY()
+	
+	UPROPERTY(EditDefaultsOnly)
+	FString TabName;
+	
+	//UPROPERTY(EditDefaultsOnly, DisplayName = "Slot Appearance")
+	//FEpithWindowElement_TabbedGroup_SlotDisplayParams DisplayParams;
 	
 	UPROPERTY(EditDefaultsOnly, meta = (ShowOnlyInnerProperties, ExcludeBaseStruct))
 	TInstancedStruct<FEpithWindowElement> Element;

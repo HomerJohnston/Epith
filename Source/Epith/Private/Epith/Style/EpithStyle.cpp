@@ -23,6 +23,7 @@ TSharedPtr<FSlateStyleSet> FEpithStyle::StyleInstance = nullptr;
 //FEpithFonts EpithFonts;
 FEpithBrushes EpithBrushes;
 FEpithStyles EpithStyles;
+FEpithFonts EpithFonts;
 
 // ================================================================================================
 
@@ -200,7 +201,7 @@ void FEpithStyle::SetupStyles()
 	// Format: EPITH_DEFINE_FONT(FName DefinitionName, FString StyleName, int Size);
 	// Sample: EPITH_DEFINE_FONT(Font_Basic, "Normal", 10);
 	// ============================================================================================
-
+	EPITH_DEFINE_FONT(Font_ViewportPopup_Title, "Bold", 12);
 
 	// ============================================================================================
 	// BRUSHES
@@ -221,6 +222,9 @@ void FEpithStyle::SetupStyles()
 	EPITH_DEFINE_BRUSH(FSlateVectorImageBrush,	Icon_PortalOut,						"NodeIcons/Icon_PortalOut", ".svg",				FVector2f(20, 20), EpithColor::White);
 	
 	EPITH_DEFINE_BRUSH(FSlateBorderBrush,		Border_2px_Deburred,				"Border_2px_Deburred", ".png",					FMargin(0.5f, 0.5f), EpithColor::White);
+	EPITH_DEFINE_BRUSH(FSlateBoxBrush,			Border_TabShape,					"Border_TabShape", ".png",						FMargin(0.5f, 0.5f), EpithColor::White);
+	
+	EPITH_DEFINE_BRUSH(FSlateBoxBrush,			Background_WhiteSquare,				"WhiteSquare", ".png",							FMargin(0.5f, 0.5f), EpithColor::White);
 	
 	// ============================================================================================
 	// SLIDER STYLES
@@ -253,48 +257,23 @@ void FEpithStyle::SetupStyles()
 	// ============================================================================================
 	// CHECKBOX STYLES
 	// ============================================================================================
-
-#if 0
-	
-	
-	const FCheckBoxStyle PlacementSegmentedBox = FCheckBoxStyle()
-		.SetCheckBoxType(ESlateCheckBoxType::ToggleButton)
-		.SetUncheckedImage(FSlateNoResource())
-		.SetUncheckedHoveredImage(FSlateNoResource())
-		.SetUncheckedPressedImage(FSlateNoResource())
-		.SetCheckedImage(FSlateNoResource())
-		.SetCheckedHoveredImage(FSlateNoResource())
-		.SetCheckedPressedImage(FSlateNoResource())
-		.SetForegroundColor(FStyleColors::Foreground)
-		.SetHoveredForegroundColor(FStyleColors::ForegroundHover)
-		.SetPressedForegroundColor(FStyleColors::ForegroundHover)
-		.SetCheckedForegroundColor(FStyleColors::Primary)
-		.SetCheckedHoveredForegroundColor(FStyleColors::Primary)
-		.SetCheckedPressedForegroundColor(FStyleColors::Primary)
-		.SetPadding(FMargin(6.f, 2.f));
-
-	Set("PlacementBrowser.CategoryControl", FSegmentedControlStyle()
-		.SetControlStyle(PlacementSegmentedBox)
-		.SetFirstControlStyle(PlacementSegmentedBox)
-		.SetLastControlStyle(PlacementSegmentedBox)
-	
-#endif
 	
 	EPITH_DEFINE_STYLE(FCheckBoxStyle, CheckBoxStyle_Tab, EPITH_COMMON_CHECKBOXSTYLE,
 		.SetCheckBoxType(ESlateCheckBoxType::ToggleButton)
 		.SetUncheckedImage(FSlateNoResource())
-		.SetUncheckedHoveredImage(FSlateNoResource())
-		.SetUncheckedPressedImage(FSlateNoResource())
-		.SetCheckedImage(FSlateNoResource())
-		.SetCheckedHoveredImage(FSlateNoResource())
-		.SetCheckedPressedImage(FSlateNoResource())
+		.SetUncheckedHoveredImage(Border_TabShape)
+		.SetUncheckedPressedImage(Border_TabShape)
+		.SetCheckedImage(Border_TabShape)
+		.SetCheckedHoveredImage(Border_TabShape)
+		.SetCheckedPressedImage(Border_TabShape)
 		.SetForegroundColor(FStyleColors::Foreground)
 		.SetHoveredForegroundColor(FStyleColors::ForegroundHover)
 		.SetPressedForegroundColor(FStyleColors::ForegroundHover)
 		.SetCheckedForegroundColor(FStyleColors::Primary)
 		.SetCheckedHoveredForegroundColor(FStyleColors::Primary)
 		.SetCheckedPressedForegroundColor(FStyleColors::Primary)
-		.SetPadding(FMargin(6.f, 2.f));
+		.SetBorderBackgroundColor(EpithColor::DeepGray)
+		.SetPadding(FMargin(12.f, 6.f));
 		
 		/*
 		.SetCheckedImage(Icon_Switch_On)

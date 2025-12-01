@@ -17,6 +17,9 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Epith")
 	TSubclassOf<AActor> TargetActorType;
 	
+	UPROPERTY(EditDefaultsOnly, Category = "Epith|Appearance")
+	float MinWidth = 180;
+	
 	UPROPERTY(EditDefaultsOnly, Category = "Epith", meta = (ShowOnlyInnerProperties, ExcludeBaseStruct))
 	TInstancedStruct<FEpithWindowElement> Root;
 	

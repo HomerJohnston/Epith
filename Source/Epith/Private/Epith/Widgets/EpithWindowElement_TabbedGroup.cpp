@@ -11,7 +11,19 @@ TSharedPtr<SWidget> FEpithWindowElement_TabbedGroup::Draw(TSharedPtr<FEpithPrope
 	
 	for (int32 i = 0; i < Slots.Num(); ++i)
 	{
-		Tabs.Add(INVTEXT("Tab"));
+		if (!Slots[i].Element.IsValid())
+		{
+			continue;
+		}
+		
+		FText TabText = FText::FromString(Slots[i].TabName);
+		
+		if (TabText.IsEmpty())
+		{
+			TabText = FText::Format(INVTEXT("Tab {0}"), i);
+		}
+		
+		Tabs.Add(TabText);
 		Panes.Add(Slots[i].Element.Get<FEpithWindowElement>().Draw(InPropertyData).ToSharedRef());
 	}
 	

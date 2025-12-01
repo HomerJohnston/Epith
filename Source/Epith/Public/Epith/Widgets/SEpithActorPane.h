@@ -9,6 +9,8 @@ class SEpithActorPane : public SCompoundWidget
 {
 	SLATE_BEGIN_ARGS(SEpithActorPane) {}
 
+		SLATE_ARGUMENT(FText, Title)
+		
 		SLATE_ARGUMENT(TSharedPtr<FEpithPropertyDataContainer>, PropertyData)
 
 		SLATE_ARGUMENT(const FEpithWindowElement*, Root)

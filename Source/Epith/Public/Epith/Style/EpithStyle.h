@@ -24,6 +24,9 @@ struct FEpithBrushes
 	FName Icon_PortalOut;
 	
 	FName Border_2px_Deburred;
+	FName Border_TabShape;
+	
+	FName Background_WhiteSquare;
 };
 
 struct FEpithStyles
@@ -32,8 +35,14 @@ struct FEpithStyles
 	FName SegmentedControlStyle_Tab;
 };
 
+struct FEpithFonts
+{
+	FSlateFontInfo Font_ViewportPopup_Title;
+};
+
 extern FEpithBrushes EpithBrushes;
 extern FEpithStyles EpithStyles;
+extern FEpithFonts EpithFonts;
 
 class FEpithStyle
 {

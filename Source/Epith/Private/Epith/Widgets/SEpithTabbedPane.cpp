@@ -1,6 +1,7 @@
 ﻿#include "Epith/Widgets/SEpithTabbedPane.h"
 
 #include "Epith/EpithLog.h"
+#include "Epith/Style/EpithColor.h"
 #include "Epith/Style/EpithStyle.h"
 #include "Widgets/Input/SSegmentedControl.h"
 #include "Widgets/Layout/SWidgetSwitcher.h"
@@ -35,7 +36,9 @@ void SEpithTabbedPane::Construct(const FArguments& InArgs)
 		.AutoHeight()
 		[
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("Menu.Background"))
+			.BorderImage(FEpithStyle::GetImageBrush(EpithBrushes.Background_WhiteSquare))
+			.BorderBackgroundColor(EpithColor::DeepGray)
+			//.ColorAndOpacity(EpithColor::DarkGray)
 			.Padding(4, 4, 4, 4)
 			[
 				Panes

@@ -40,8 +40,6 @@ bool UEpithEditorWorldExtension::InputKey(FEditorViewportClient* InViewportClien
 		// Dig to native class
 		bool bFoundEpithAttributeSet = false;
 		
-		const UEpithProjectSettings* ProjectSettings = GetDefault<UEpithProjectSettings>();
-
 		const TInstancedStruct<FEpithWindowElement>* PanelRoot = GetPanelRoot(Actor);
 		
 		if (PanelRoot)
