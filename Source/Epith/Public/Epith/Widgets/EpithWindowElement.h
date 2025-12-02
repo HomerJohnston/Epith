@@ -12,7 +12,7 @@ struct FEpithWindowElement_BoxDisplayParams
 	GENERATED_BODY()
 	
 	UPROPERTY(EditDefaultsOnly)
-	bool bHideBorder = false;
+	bool bBorder = false;
 	
 	UPROPERTY(EditDefaultsOnly, meta = (ClampMin = 0, ClampMax = 40, UIMin = 0, UIMax = 20))
 	uint8 Padding = 8;

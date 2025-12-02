@@ -44,7 +44,9 @@ public class Epith : ModuleRules
 				"UnrealEd",
 				"Projects",
 				"DeveloperSettings",
-				"AssetDefinition"
+				"AssetDefinition",
+				"EditorFramework",
+				"InputCore"
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);

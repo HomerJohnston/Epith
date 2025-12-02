@@ -25,6 +25,7 @@ struct FEpithBrushes
 	
 	FName Border_2px_Deburred;
 	FName Border_TabShape;
+	FName Background_ViewportMasterPanelHeader;
 	
 	FName Background_WhiteSquare;
 };

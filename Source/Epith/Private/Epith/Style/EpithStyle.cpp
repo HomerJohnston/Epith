@@ -201,7 +201,7 @@ void FEpithStyle::SetupStyles()
 	// Format: EPITH_DEFINE_FONT(FName DefinitionName, FString StyleName, int Size);
 	// Sample: EPITH_DEFINE_FONT(Font_Basic, "Normal", 10);
 	// ============================================================================================
-	EPITH_DEFINE_FONT(Font_ViewportPopup_Title, "Bold", 12);
+	EPITH_DEFINE_FONT(Font_ViewportPopup_Title, "Bold", 10);
 
 	// ============================================================================================
 	// BRUSHES
@@ -225,6 +225,7 @@ void FEpithStyle::SetupStyles()
 	EPITH_DEFINE_BRUSH(FSlateBoxBrush,			Border_TabShape,					"Border_TabShape", ".png",						FMargin(0.5f, 0.5f), EpithColor::White);
 	
 	EPITH_DEFINE_BRUSH(FSlateBoxBrush,			Background_WhiteSquare,				"WhiteSquare", ".png",							FMargin(0.5f, 0.5f), EpithColor::White);
+	EPITH_DEFINE_BRUSH(FSlateBoxBrush,			Background_ViewportMasterPanelHeader,	"Background_ViewportMasterPanelHeader", ".png",	FMargin(10.f/16.f, 4.f/16.f, 4.f/16.f, 12.f/16.f), EpithColor::White);
 	
 	// ============================================================================================
 	// SLIDER STYLES
@@ -272,7 +273,7 @@ void FEpithStyle::SetupStyles()
 		.SetCheckedForegroundColor(FStyleColors::Primary)
 		.SetCheckedHoveredForegroundColor(FStyleColors::Primary)
 		.SetCheckedPressedForegroundColor(FStyleColors::Primary)
-		.SetBorderBackgroundColor(EpithColor::DeepGray)
+		.SetBorderBackgroundColor(EpithColor::DeepGray_BarelyTrans)
 		.SetPadding(FMargin(12.f, 6.f));
 		
 		/*

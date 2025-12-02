@@ -37,8 +37,7 @@ void SEpithTabbedPane::Construct(const FArguments& InArgs)
 		[
 			SNew(SBorder)
 			.BorderImage(FEpithStyle::GetImageBrush(EpithBrushes.Background_WhiteSquare))
-			.BorderBackgroundColor(EpithColor::DeepGray)
-			//.ColorAndOpacity(EpithColor::DarkGray)
+			.BorderBackgroundColor(EpithColor::DeepGray_BarelyTrans)
 			.Padding(4, 4, 4, 4)
 			[
 				Panes

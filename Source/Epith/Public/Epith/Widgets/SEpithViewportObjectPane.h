@@ -5,11 +5,11 @@
 
 struct FEpithWindowElement;
 
-class SEpithActorPane : public SCompoundWidget
+class SEpithViewportObjectPane : public SCompoundWidget
 {
-	SLATE_BEGIN_ARGS(SEpithActorPane) {}
+	SLATE_BEGIN_ARGS(SEpithViewportObjectPane) {}
 
-		SLATE_ARGUMENT(FText, Title)
+		SLATE_ARGUMENT(UObject*, Target)
 		
 		SLATE_ARGUMENT(TSharedPtr<FEpithPropertyDataContainer>, PropertyData)
 

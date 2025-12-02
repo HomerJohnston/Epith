@@ -33,7 +33,7 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(TSharedPtr<FEpithP
 		[
 			SNew(SBorder)
 			.Padding(Slot.DisplayParams.Padding)
-			.BorderImage(Slot.DisplayParams.bHideBorder ? FAppStyle::GetBrush("NoBorder") : FEpithStyle::GetImageBrush(EpithBrushes.Border_2px_Deburred))
+			.BorderImage(Slot.DisplayParams.bBorder ? FEpithStyle::GetImageBrush(EpithBrushes.Border_2px_Deburred) : FAppStyle::GetBrush("NoBorder"))
 			.BorderBackgroundColor(EpithColor::Noir)
 			[
 				Widget.ToSharedRef()

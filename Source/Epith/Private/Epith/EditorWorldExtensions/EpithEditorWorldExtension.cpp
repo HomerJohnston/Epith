@@ -1,11 +1,17 @@
 ﻿#include "Epith/EditorWorldExtensions/EpithEditorWorldExtension.h"
 
+#include "IAssetViewport.h"
+#include "LevelEditor.h"
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Epith/EpithPanelDefinition.h"
 #include "Epith/DeveloperSettings/EpithProjectSettings.h"
+#include "Epith/Misc/EpithPropertyDataContainer.h"
+#include "Epith/Style/EpithColor.h"
 #include "Epith/Subsystems/EpithEditorSubsystem.h"
-#include "Epith/Windows/EpithViewportPopup.h"
+#include "Epith/Widgets/SEpithViewportMasterPane.h"
+#include "Epith/Widgets/SEpithViewportObjectPane.h"
 #include "Subsystems/EditorActorSubsystem.h"
+#include "Widgets/Layout/SConstraintCanvas.h"
 
 const FName EpithMetaDataKey = TEXT("Epith");
 
@@ -35,27 +41,135 @@ bool UEpithEditorWorldExtension::InputKey(FEditorViewportClient* InViewportClien
 
 		AActor* Actor = SelectedActors[0];
 
-		const UClass* Class = Actor->GetClass();
-		
-		// Dig to native class
-		bool bFoundEpithAttributeSet = false;
-		
-		const TInstancedStruct<FEpithWindowElement>* PanelRoot = GetPanelRoot(Actor);
-		
-		if (PanelRoot)
-		{
-			const FEpithWindowElement& WindowRoot = PanelRoot->Get<FEpithWindowElement>();
-			FEpithViewportPopup::Show(Actor, WindowRoot);
-			return true;
-		}
+		return TryShowPanel(Actor);
 	}
 
 	return false;
 }
 
-const TInstancedStruct<FEpithWindowElement>* UEpithEditorWorldExtension::GetPanelRoot(AActor* Actor) const
+TArray<FEpithObjectWindowRootMatch> UEpithEditorWorldExtension::GetPanelRoots(const TArray<UObject*>& Objects, const TArray<const UEpithPanelDefinition*>& PanelDefinitions)
 {
-	const UEpithPanelDefinition* PanelDefinition = nullptr;
+	TArray<FEpithObjectWindowRootMatch> Matches;
+	
+	for (UObject* Object : Objects)
+	{
+		if (!IsValid(Object))
+		{
+			continue;
+		}
+		
+		for (const UEpithPanelDefinition* PanelDefinition : PanelDefinitions)
+		{
+			if (!PanelDefinition->HasRoot())
+			{
+				continue;
+			}
+			
+			if (Object->GetClass()->IsChildOf(PanelDefinition->GetTargetActorType()))
+			{
+				Matches.Add( { Object, &PanelDefinition->GetRoot()->Get<FEpithWindowElement>() } );
+			}
+		}
+	}
+	
+	return Matches;
+}
+
+bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target)
+{
+	if (!IsValid(Target))
+	{
+		return false;
+	}
+	
+	TArray<const UEpithPanelDefinition*> PanelDefinitions = GetPanelDefinitions();
+	
+	if (PanelDefinitions.Num() == 0)
+	{
+		return false;
+	}
+	
+	TArray<UObject*> Objects = GetAllObjects(Target);
+	TArray<FEpithObjectWindowRootMatch> ObjectWindowMatches = GetPanelRoots(Objects, PanelDefinitions);
+		
+	FVector2D ScreenPos = GetInitialScreenPos();
+		
+	int32 Panels = 0;
+	
+	TArray<TSharedPtr<SWidget>> Panes;
+	
+	for (const FEpithObjectWindowRootMatch& Match : ObjectWindowMatches)
+	{
+		UObject* CurrentTarget = Match.Object;
+		const FEpithWindowElement* RootWindowElement = Match.WindowRoot;
+
+		TSharedPtr<FEpithPropertyDataContainer> PropertyData = MakeShared<FEpithPropertyDataContainer>(CurrentTarget);
+		
+		TSharedPtr<SWidget> Widget = SNew(SEpithViewportObjectPane)
+			.Target(CurrentTarget)
+			.PropertyData(PropertyData)
+			.Root(RootWindowElement);
+	
+		if (!Widget)
+		{
+			continue;
+		}
+		
+		Panes.Add(Widget);
+		
+		++Panels;
+	}
+	
+	TSharedRef<SConstraintCanvas> MasterPane = SNew(SConstraintCanvas);
+	
+	TSharedPtr<SEpithViewportMasterPane> MasterPane_Int = SNew(SEpithViewportMasterPane)
+		.Owner(MasterPane);
+	
+	MasterPane->AddSlot()
+	.Alignment(FVector2D(0, 0))
+	.Anchors(FAnchors(0, 0))
+	.Offset_Lambda([MasterPane_Int] ()
+	{
+		return FMargin(400, 200, 600, 600);
+	})
+	.AutoSize(true)
+	[
+		SNew(SEpithViewportMasterPane)
+		.ChildPanes(Panes)
+	];
+	
+	static const FName LevelEditorName("LevelEditor");
+	if (FModuleManager::Get().IsModuleLoaded(LevelEditorName))
+	{
+		FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>(LevelEditorName);
+		TSharedPtr<IAssetViewport> ActiveLevelViewport = LevelEditorModule.GetFirstActiveViewport();
+		if (ActiveLevelViewport.IsValid())
+		{
+			ActiveLevelViewport->AddOverlayWidget(MasterPane_Int.ToSharedRef());
+		}
+	}
+	
+	/*
+	FSlateApplication::Get().PushMenu(
+		FSlateApplication::Get().GetUserFocusedWidget(0).ToSharedRef(),
+		FWidgetPath(),
+		MasterPane ,
+		FDeprecateSlateVector2D(ScreenPos.X, ScreenPos.Y),
+		FPopupTransitionEffect(FPopupTransitionEffect::TypeInPopup),
+		true);
+	*/
+	
+	return Panels > 0;
+}
+
+FVector2D UEpithEditorWorldExtension::GetInitialScreenPos()
+{
+	return {800, 400};
+}
+
+TArray<const UEpithPanelDefinition*> UEpithEditorWorldExtension::GetPanelDefinitions()
+{
+	TArray<const UEpithPanelDefinition*> PanelDefinitions;
 	
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
 	
@@ -68,67 +182,41 @@ const TInstancedStruct<FEpithWindowElement>* UEpithEditorWorldExtension::GetPane
 	TArray<FAssetData> OutAssets;
 	AssetRegistry.GetAssets(Filter, OutAssets);
 	
-	if (OutAssets.Num() == 0)
-	{
-		return nullptr;
-	}
+	// We anticipate that most projects will have more panel definitions than objects on an actor (this will probably usually be false, but it's a better assumption for larger cases)
+	// Iterate the "large" panel definitions array. For each element, try to match it with one of the target objects. 
 	
-	// TODO this might get slow if you have hundreds of these? Will a game ever have hundreds of these? Can I include some other metadata in assets to search for faster with the asset registry?
-	TArray<TPair<uint8, const UEpithPanelDefinition*>> FoundPanelDefinitionsForClass;
-	
-	// We need to iterate all of the panel definitions to find the one most suitable to our actor.
 	for (const FAssetData& AssetData : OutAssets)
 	{
-		PanelDefinition = Cast<const UEpithPanelDefinition>(AssetData.GetAsset());	
+		const UEpithPanelDefinition* PanelDefinition = Cast<const UEpithPanelDefinition>(AssetData.GetAsset());
 		
-		if (PanelDefinition && Actor->GetClass()->IsChildOf(PanelDefinition->GetTargetActorType()))
+		if (PanelDefinition)
 		{
-			uint8 Indirections = 0; // I am making the humble assumption that there will never be more than 255 parent classes
-			bool bMatch = false;
-			
-			const UClass* CandidateClass = Actor->GetClass();
-			
-			// Early out - if we find an asset with an exact match we don't need to keep iterating
-			if (PanelDefinition->GetTargetActorType() == CandidateClass)
-			{
-				return PanelDefinition->GetRoot();
-			}
-	
-			while (CandidateClass)
-			{
-				// We don't need to check if low level classes UObject, UObjectBaseUtility, etc. are matches
-				if (!CandidateClass->IsChildOf(AActor::StaticClass()))
-				{
-					break;
-				}
-				
-				// We will NOT return a perfect match result here so that we can keep looking for duplicates to inform the user 
-				if (PanelDefinition->GetTargetActorType() == CandidateClass)
-				{
-					bMatch = true;
-					break;
-				}
-		
-				CandidateClass = CandidateClass->GetSuperClass();
-				++Indirections;
-			}
-			
-			if (bMatch)
-			{
-				FoundPanelDefinitionsForClass.Add( {Indirections, PanelDefinition} );
-			}
+			PanelDefinitions.Add(PanelDefinition);
 		}
 	}
 	
-	if (FoundPanelDefinitionsForClass.Num() == 0)
+	// Make it so that the "child-most" classes are always on the left and discovered first when Objects are trying to match to these
+	PanelDefinitions.Sort( [] (const UEpithPanelDefinition& Left, const UEpithPanelDefinition& Right)
 	{
-		return nullptr;
-	}
-	
-	FoundPanelDefinitionsForClass.Sort([] (const TPair<uint8, const UEpithPanelDefinition*>& Left, const TPair<uint8, const UEpithPanelDefinition*>& Right)
-	{
-		return Left.Key < Right.Key;
+		return Left.IsA(Right.GetClass());
 	});
 	
-	return FoundPanelDefinitionsForClass[0].Value->GetRoot();
+	return PanelDefinitions;
 }
+
+TArray<UObject*> UEpithEditorWorldExtension::GetAllObjects(UObject* Target)
+{
+	TArray<UObject*> Objects;
+
+	if (!Target)
+	{
+		return Objects;
+	}		
+
+	GetObjectsWithOuter(Target, Objects);
+	
+	Objects.Insert(Target, 0);
+
+	return Objects;
+}
+

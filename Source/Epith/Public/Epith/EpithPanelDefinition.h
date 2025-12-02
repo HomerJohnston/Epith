@@ -15,7 +15,7 @@ class EPITH_API UEpithPanelDefinition : public UObject
 	
 protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Epith")
-	TSubclassOf<AActor> TargetActorType;
+	TSubclassOf<UObject> TargetClass;
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Epith|Appearance")
 	float MinWidth = 180;
@@ -24,9 +24,9 @@ protected:
 	TInstancedStruct<FEpithWindowElement> Root;
 	
 public:
-	TSubclassOf<AActor> GetTargetActorType() const
+	TSubclassOf<UObject> GetTargetActorType() const
 	{
-		return TargetActorType;
+		return TargetClass;
 	}
 	
 	const TInstancedStruct<FEpithWindowElement>* GetRoot() const
@@ -37,6 +37,16 @@ public:
 		}
 		
 		return nullptr;
+	}
+
+	bool HasRoot() const
+	{
+		if (!Root.IsValid())
+		{
+			return false;
+		}
+		
+		return true;
 	}
 };
 

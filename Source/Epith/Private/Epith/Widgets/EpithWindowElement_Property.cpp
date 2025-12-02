@@ -17,13 +17,13 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithProperty
 	
 	FNodeWidgets Widgets = TreeNode->CreateNodeWidgets();
 
-	TSharedPtr<SWidget> Row;
+	TSharedPtr<SWidget> Row = nullptr;
 	
 	if (Widgets.WholeRowWidget)
 	{
 		Row = Widgets.WholeRowWidget;
 	}
-	else
+	else if (Widgets.NameWidget && Widgets.ValueWidget)
 	{
 		Row = SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot()
@@ -39,13 +39,18 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithProperty
 		];
 	}
 	
+	if (!Row)
+	{
+		return SNew(STextBlock).Text(INVTEXT("ERROR - No widgets!"));
+	}
+	
 	TSharedPtr<SVerticalBox> PropertyAndChildrenBox = SNew(SVerticalBox);
 	PropertyAndChildrenBox->AddSlot()
+	.AutoHeight()
 	[
 		Row.ToSharedRef()
 	];
 	
-	/*
 	uint32 NumChildren;
 	TArray<TSharedRef<IDetailTreeNode>> TreeNodeChildren;
 	TreeNode->GetChildren(TreeNodeChildren);
@@ -53,23 +58,41 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithProperty
 	
 	for (uint32 i = 0; i < NumChildren; ++i)
 	{
-		PropertyAndChildrenBox->AddSlot()
-		[
-			SNew(SHorizontalBox)
+		FNodeWidgets ChildWidgets = TreeNodeChildren[i]->CreateNodeWidgets();
+		TSharedPtr<IPropertyHandle> ChildPropertyHandle = TreeNodeChildren[i]->CreatePropertyHandle();
+		TSharedPtr<SWidget> ChildRow = nullptr;
+		
+		if (ChildWidgets.WholeRowWidget)
+		{
+			ChildRow = ChildWidgets.WholeRowWidget;
+		}
+		else if (ChildWidgets.NameWidget && ChildWidgets.ValueWidget)
+		{
+			ChildRow = SNew(SHorizontalBox)
 			+ SHorizontalBox::Slot()
 			.AutoWidth()
 			.Padding(0, 0, 8, 0)
 			[
-				PropertyHandle->GetChildHandle(i).Get()->CreatePropertyNameWidget()
+				ChildWidgets.NameWidget.ToSharedRef()
 			]
 			+ SHorizontalBox::Slot()
-			.AutoWidth()
+			.FillWidth(0.5)
 			[
-				PropertyHandle->GetChildHandle(i).Get()->CreatePropertyValueWidgetWithCustomization(nullptr)
-			]
+				ChildWidgets.ValueWidget.ToSharedRef()
+			];
+		}
+		else
+		{
+			continue;
+		}
+		
+		PropertyAndChildrenBox->AddSlot()
+		.AutoHeight()
+		[
+			ChildRow.ToSharedRef()
 		];
 	}
-	*/
+	
 	
 	return PropertyAndChildrenBox;
 }

@@ -7,6 +7,7 @@
 #define HOVER		1.20
 #define PRESS		0.80
 #define SEMITRANS	0.90
+#define BARELYTRANS	0.95
 #define TRANS		0.70
 #define SEMIGLASS	0.45
 #define GLASS		0.20
@@ -16,6 +17,7 @@
 inline FLinearColor Name = FLinearColor(RR, GG, BB, AA);\
 inline FLinearColor Name##Hovered = FLinearColor(HOVER * RR, HOVER * GG, HOVER * BB, AA);\
 inline FLinearColor Name##Pressed = FLinearColor(PRESS * RR, PRESS * GG, PRESS * BB, AA);\
+inline FLinearColor Name##_BarelyTrans = FLinearColor(RR, GG, BB, BARELYTRANS);\
 inline FLinearColor Name##_SemiTrans = FLinearColor(RR, GG, BB, SEMITRANS);\
 inline FLinearColor Name##Hovered_SemiTrans = FLinearColor(HOVER * RR, HOVER * GG, HOVER * BB, SEMITRANS * AA);\
 inline FLinearColor Name##Pressed_SemiTrans = FLinearColor(PRESS * RR, PRESS * GG, PRESS * BB, SEMITRANS * AA);\
