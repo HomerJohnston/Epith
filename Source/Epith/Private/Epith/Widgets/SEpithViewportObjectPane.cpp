@@ -1,5 +1,6 @@
 ﻿#include "Epith/Widgets/SEpithViewportObjectPane.h"
 
+#include "Epith/EpithLog.h"
 #include "Epith/Style/EpithColor.h"
 #include "Epith/Style/EpithStyle.h"
 #include "Epith/Widgets/EpithWindowElement.h"
@@ -8,12 +9,41 @@
 
 void SEpithViewportObjectPane::Construct(const FArguments& InArgs)
 {
-	PropertyData = InArgs._PropertyData;
-	
 	if (!InArgs._Root || !InArgs._Target)
 	{
 		return;
 	}
+	
+	Root = InArgs._Root;
+	Target = InArgs._Target;
+
+	FCoreUObjectDelegates::OnObjectsReplaced.AddSP(this, &SEpithViewportObjectPane::OnObjectsReinstanced);
+	
+	Build();
+}
+
+void SEpithViewportObjectPane::OnObjectsReinstanced(const TMap<UObject*, UObject*>& ReplacementMap)
+{
+	UObject* const* NewTarget = ReplacementMap.Find(Target.Get(true));
+	
+	if (NewTarget)
+	{
+		Target = *NewTarget;
+		Build();
+	}
+}
+
+void SEpithViewportObjectPane::Build()
+{
+	if (!Target.IsValid())
+	{
+		checkNoEntry();
+		return;
+	}
+
+	UE_LOG(LogEpith, Display, TEXT("Rebuilding..."));
+	
+	PropertyData = MakeShared<FEpithPropertyDataContainer>(Target.Get());
 			
 	ChildSlot
 	[
@@ -31,12 +61,12 @@ void SEpithViewportObjectPane::Construct(const FArguments& InArgs)
 				.Padding(12, 12, 12, 8)
 				[
 					SNew(SEpithViewportObjectPaneHeader)
-					.Target(InArgs._Target)
+					.Target(Target.Get())
 				]
 				+ SVerticalBox::Slot()
 				.AutoHeight()
 				[
-					InArgs._Root->Draw(PropertyData).ToSharedRef()
+					Root->Draw(PropertyData).ToSharedRef()
 				]
 			]
 		]

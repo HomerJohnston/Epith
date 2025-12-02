@@ -103,11 +103,9 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target)
 		UObject* CurrentTarget = Match.Object;
 		const FEpithWindowElement* RootWindowElement = Match.WindowRoot;
 
-		TSharedPtr<FEpithPropertyDataContainer> PropertyData = MakeShared<FEpithPropertyDataContainer>(CurrentTarget);
-		
 		TSharedPtr<SWidget> Widget = SNew(SEpithViewportObjectPane)
 			.Target(CurrentTarget)
-			.PropertyData(PropertyData)
+			//.PropertyData(PropertyData)
 			.Root(RootWindowElement);
 	
 		if (!Widget)
@@ -120,22 +118,22 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target)
 		++Panels;
 	}
 	
-	TSharedRef<SConstraintCanvas> MasterPane = SNew(SConstraintCanvas);
+	TSharedRef<SConstraintCanvas> Canvas = SNew(SConstraintCanvas);
 	
 	TSharedPtr<SEpithViewportMasterPane> MasterPane_Int = SNew(SEpithViewportMasterPane)
-		.Owner(MasterPane);
+		.Canvas(Canvas)
+		.ChildPanes(Panes);
 	
-	MasterPane->AddSlot()
+	SConstraintCanvas::FSlot::FSlotArguments& Slot = Canvas->AddSlot()
 	.Alignment(FVector2D(0, 0))
 	.Anchors(FAnchors(0, 0))
-	.Offset_Lambda([MasterPane_Int] ()
+	.Offset_Lambda([MasterPane_Int]()
 	{
-		return FMargin(400, 200, 600, 600);
+		return MasterPane_Int->GetOffset();
 	})
 	.AutoSize(true)
 	[
-		SNew(SEpithViewportMasterPane)
-		.ChildPanes(Panes)
+		MasterPane_Int.ToSharedRef()
 	];
 	
 	static const FName LevelEditorName("LevelEditor");
@@ -145,7 +143,7 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target)
 		TSharedPtr<IAssetViewport> ActiveLevelViewport = LevelEditorModule.GetFirstActiveViewport();
 		if (ActiveLevelViewport.IsValid())
 		{
-			ActiveLevelViewport->AddOverlayWidget(MasterPane_Int.ToSharedRef());
+			ActiveLevelViewport->AddOverlayWidget(Canvas);
 		}
 	}
 	

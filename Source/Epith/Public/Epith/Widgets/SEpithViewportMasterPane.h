@@ -1,14 +1,18 @@
 ﻿#pragma once
 #include "Widgets/Layout/Anchors.h"
+#include "Widgets/Layout/SConstraintCanvas.h"
 
 class SConstraintCanvas;
 
 class SEpithViewportMasterPane : public SCompoundWidget
 {
-	
-	SLATE_BEGIN_ARGS(SEpithViewportMasterPane) {}
+	SLATE_BEGIN_ARGS(SEpithViewportMasterPane)
+		: _StartLocation(FVector2D(100, 100))
+		{}
 
-		SLATE_ARGUMENT(TSharedPtr<SWidget>, Owner)
+		SLATE_ARGUMENT(TSharedPtr<SWidget>, Canvas)
+
+		SLATE_ARGUMENT(FVector2D, StartLocation)
 		
 		SLATE_ARGUMENT(TArray<TSharedPtr<SWidget>>, ChildPanes)
 		
@@ -16,11 +20,7 @@ class SEpithViewportMasterPane : public SCompoundWidget
 	
 	void Construct(const FArguments& InArgs);
 	
-	TSharedPtr<SWidget> Owner;
-	
-	TSharedPtr<SConstraintCanvas> Canvas;
-	
-	TSharedPtr<SWidget> ActualPane;
+	TWeakPtr<SWidget> Canvas;
 	
 	FReply StartDragging(FVector2D InTabGrabScreenSpaceOffset, const FPointerEvent& MouseEvent);
 	
@@ -30,5 +30,10 @@ class SEpithViewportMasterPane : public SCompoundWidget
 	
 	void Close();
 	
-	FAnchors GetAnchors();
+	FMargin GetOffset();
+	
+	bool bDragging = false;
+	FVector2D CurrentPanelLocation;
+	FVector2D StartDragCursorLocation;
+	FVector2D CurrentDelta;
 };

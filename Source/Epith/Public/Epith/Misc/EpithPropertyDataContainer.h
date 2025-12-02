@@ -6,17 +6,23 @@
 struct FEpithPropertyDataContainer
 {
 public:
-	FEpithPropertyDataContainer(UObject* Target);
+	FEpithPropertyDataContainer(UObject* InTarget);
 
+	~FEpithPropertyDataContainer();
+	
 protected:
+	TWeakObjectPtr<UObject> Target;
+	
 	TSharedPtr<class IPropertyRowGenerator> PropertyRowGenerator;
 	
 	TMap<FName, TSharedPtr<IDetailTreeNode>> AllTreeNodes;
 	TMap<FName, TSharedPtr<IPropertyHandle>> AllPropertyHandles;
-	
-	void Build(UObject* Actor);
+
+	void Build(TStrongObjectPtr<UObject> BuildTarget);
 	
 	void GatherChildDetailTreeNodesRecursive(TSharedRef<IDetailTreeNode> ParentTreeNode, TArray<TSharedRef<IDetailTreeNode>>& PendingTreeNodes);
+	
+	void OnObjectsReinstanced(const TMap<UObject*, UObject*>& ReplacementMap);
 	
 public:
 	TSharedPtr<IPropertyHandle> FindPropertyHandle(FName PropertyPath)

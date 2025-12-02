@@ -29,24 +29,20 @@ void SEpithViewportMasterPaneHeader::Construct(const FArguments InArgs)
 				.AutoWidth()
 				.Padding(0, 0, 0, 0)
 				[
-					SNew(SBox)
-					.WidthOverride(24)
-					.HeightOverride(24)
+					SNew(SButton)
+					.ToolTipText(LOCTEXT("ViewportPropertyEditor_CloseButton", "Close")) // TODO it'd be nice to properly support OK/CANCEL ... bit of a major change, would have to make a dummy copy and reflect it back into the source
+					.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
+					.ContentPadding(8)
+					.NormalPaddingOverride(FMargin(0))
+					.OnClicked_Lambda( [this] ()
+					{
+						ParentPtr.Pin()->Close();
+						return FReply::Handled();
+					})
 					[
-						SNew(SButton)
-						.ToolTipText(LOCTEXT("ViewportPropertyEditor_CloseButton", "Close")) // TODO it'd be nice to properly support OK/CANCEL ... bit of a major change, would have to make a dummy copy and reflect it back into the source
-						.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
-						.ContentPadding(4)
-						.OnClicked_Lambda( [this] ()
-						{
-							ParentPtr.Pin()->Close();
-							return FReply::Handled();
-						})
-						[
-							SNew(SImage)
-							.DesiredSizeOverride(FVector2D(8, 8))
-							.Image(FAppStyle::Get().GetBrush("Icons.X"))
-						]
+						SNew(SImage)
+						.DesiredSizeOverride(FVector2D(16, 16))
+						.Image(FAppStyle::Get().GetBrush("Icons.X"))
 					]
 				]
 			]
@@ -62,7 +58,7 @@ FReply SEpithViewportMasterPaneHeader::OnDragDetected(const FGeometry& MyGeometr
 	TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin();
 	if (PinnedParent.IsValid())
 	{
-		return PinnedParent->StartDragging(TabGrabScreenSpaceOffset, MouseEvent);
+		return PinnedParent->StartDragging(/*TabGrabScreenSpaceOffset*/MouseEvent.GetScreenSpacePosition(), MouseEvent);
 	}
 
 	return FReply::Unhandled();

@@ -3,18 +3,32 @@
 #include "IPropertyRowGenerator.h"
 #include "Epith/EpithLog.h"
 
-FEpithPropertyDataContainer::FEpithPropertyDataContainer(UObject* Target)
+FEpithPropertyDataContainer::FEpithPropertyDataContainer(UObject* InTarget)
 {
-	Build(Target);
+	if (!IsValid(InTarget))
+	{
+		return;
+	}
+	
+	Target = InTarget;
+	
+	Build(Target.Pin());
+	
+	//FCoreUObjectDelegates::OnObjectsReplaced.AddRaw(this, &FEpithPropertyDataContainer::OnObjectsReinstanced);
 }
 
-void FEpithPropertyDataContainer::Build(UObject* Actor)
+FEpithPropertyDataContainer::~FEpithPropertyDataContainer()
+{
+	//FCoreUObjectDelegates::OnObjectsReplaced.RemoveAll(this);
+}
+
+void FEpithPropertyDataContainer::Build(TStrongObjectPtr<UObject> BuildTarget)
 {
 	static const FName PropertyEditorName = "PropertyEditor";
 
 	FPropertyEditorModule& PropertyEditor = FModuleManager::Get().LoadModuleChecked<FPropertyEditorModule>(PropertyEditorName);
 	PropertyRowGenerator = PropertyEditor.CreatePropertyRowGenerator(FPropertyRowGeneratorArgs());
-	PropertyRowGenerator->SetObjects( { Actor } );
+	PropertyRowGenerator->SetObjects( { BuildTarget.Get() } );
 
 	TArray<TSharedRef<IDetailTreeNode>> TreeNodes;
 
@@ -49,7 +63,6 @@ void FEpithPropertyDataContainer::Build(UObject* Actor)
 		}
 	}
 	
-	UE_LOG(LogEpith, Display, TEXT("All done"));
 }
 
 void FEpithPropertyDataContainer::GatherChildDetailTreeNodesRecursive(TSharedRef<IDetailTreeNode> ParentTreeNode, TArray<TSharedRef<IDetailTreeNode>>& PendingTreeNodes)
@@ -64,4 +77,15 @@ void FEpithPropertyDataContainer::GatherChildDetailTreeNodesRecursive(TSharedRef
 	}
 
 	PendingTreeNodes.Append(Children);
+}
+
+void FEpithPropertyDataContainer::OnObjectsReinstanced(const TMap<UObject*, UObject*>& ReplacementMap)
+{
+	UObject* const* NewTarget = ReplacementMap.Find(Target.Get());
+	
+	if (NewTarget)
+	{
+		Target = *NewTarget;
+		Build(Target.Pin());
+	}
 }

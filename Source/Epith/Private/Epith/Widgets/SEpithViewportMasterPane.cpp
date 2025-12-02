@@ -2,6 +2,7 @@
 
 #include "IAssetViewport.h"
 #include "LevelEditor.h"
+#include "Epith/EpithLog.h"
 #include "Epith/Style/EpithColor.h"
 #include "Epith/Widgets/SEpithViewportMasterPaneHeader.h"
 #include "Viewports/InViewportUIDragOperation.h"
@@ -11,7 +12,10 @@
 
 void SEpithViewportMasterPane::Construct(const FArguments& InArgs)
 {
-	Owner = InArgs._Owner;
+	Canvas = InArgs._Canvas;
+	CurrentPanelLocation = InArgs._StartLocation;
+	
+	check(Canvas.IsValid());
 	
 	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
 	
@@ -38,9 +42,9 @@ void SEpithViewportMasterPane::Construct(const FArguments& InArgs)
 
 	TSharedRef<SEpithViewportMasterPane> Self = StaticCastSharedRef<SEpithViewportMasterPane>(AsShared());
 
-	Canvas = SNew(SConstraintCanvas);
-	
-	ActualPane = SNew(SBackgroundBlur)
+	ChildSlot
+	[
+		SNew(SBackgroundBlur)
 		.BlurStrength(4)
 		.Padding(0.0f)
 		.CornerRadius(FVector4(4.0f, 4.0f, 4.0f, 4.0f))
@@ -70,46 +74,42 @@ void SEpithViewportMasterPane::Construct(const FArguments& InArgs)
 					]
 				]
 			]
-		];
-	
-	Canvas->AddSlot()
-	.Alignment(FVector2D(0, 0))
-	.Anchors(FAnchors(0, 0))
-	.Offset(FMargin(400, 200, 600, 600))
-	//.AutoSize(true)
-	[
-		ActualPane.ToSharedRef()
-	];
-	
-	ChildSlot
-	[
-		Canvas.ToSharedRef()	
+		]
 	];
 }
 
 FReply SEpithViewportMasterPane::StartDragging(FVector2D InTabGrabScreenSpaceOffset, const FPointerEvent& MouseEvent)
 {
-	UE_LOG(LogTemp, Display, TEXT("Start: %s"), *InTabGrabScreenSpaceOffset.ToString());
-	
 	FOnInViewportUIDropped OnUIDropped = FOnInViewportUIDropped::CreateSP(this, &SEpithViewportMasterPane::FinishDragging);
+	
+	// This is ghetto but whatever it's an editor tool.
+	TSharedRef<SWidget> DummyDragger = SNew(SImage).DesiredSizeOverride(FVector2D(1,1));
 	
 	// Start dragging.
 	TSharedRef<FInViewportUIDragOperation> DragDropOperation =
 		FInViewportUIDragOperation::New(
-			ActualPane.ToSharedRef(),
+			DummyDragger,
 			InTabGrabScreenSpaceOffset,
 			GetDesiredSize(),
 			OnUIDropped
 		);
+	
+	bDragging = true;
+	StartDragCursorLocation = FSlateApplication::Get().GetCursorPos();
+	
+	SetRenderOpacity(0.8);
 	
 	return FReply::Handled().BeginDragDrop(DragDropOperation);
 }
 
 void SEpithViewportMasterPane::FinishDragging(const FVector2D InLocation)
 {
-	UE_LOG(LogTemp, Display, TEXT("To: %s"), *InLocation.ToString());
-	
 	this->SetRenderOpacity(1.0f);
+	
+	bDragging = false;
+	CurrentPanelLocation = CurrentPanelLocation += CurrentDelta;
+	
+	SetRenderOpacity(1.0);
 	
 	ULevelEditorViewportSettings* LevelEditorViewportSettings = GetMutableDefault<ULevelEditorViewportSettings>();
 	LevelEditorViewportSettings->LastInViewportMenuLocation = InLocation;
@@ -119,6 +119,17 @@ void SEpithViewportMasterPane::FinishDragging(const FVector2D InLocation)
 void SEpithViewportMasterPane::Tick(const FGeometry& AllottedGeometry, const double InCurrentTime, const float InDeltaTime)
 {
 	SCompoundWidget::Tick(AllottedGeometry, InCurrentTime, InDeltaTime);
+	
+	if (bDragging)
+	{
+		FVector2D CursorPos = FSlateApplication::Get().GetCursorPos();
+		
+		CurrentDelta = CursorPos - StartDragCursorLocation;
+	}
+	else
+	{
+		CurrentDelta = FVector2D::ZeroVector;
+	}
 }
 
 void SEpithViewportMasterPane::Close()
@@ -130,12 +141,25 @@ void SEpithViewportMasterPane::Close()
 		TSharedPtr<IAssetViewport> ActiveLevelViewport = LevelEditorModule.GetFirstActiveViewport();
 		if (ActiveLevelViewport.IsValid())
 		{
-			ActiveLevelViewport->RemoveOverlayWidget(AsShared());
+			ActiveLevelViewport->RemoveOverlayWidget(Canvas.Pin().ToSharedRef());
 		}
 	}
 }
 
-FAnchors SEpithViewportMasterPane::GetAnchors()
+FMargin SEpithViewportMasterPane::GetOffset()
 {
-	return FAnchors( FMath::RandRange(0.0f, 0.2f), FMath::RandRange(0.0f, 0.2f), FMath::RandRange(0.0f, 0.2f), FMath::RandRange(0.0f, 0.2f) );
+	FVector2D Size = GetPaintSpaceGeometry().GetAbsoluteSize();
+	
+	FVector2D Position;
+	
+	if (bDragging)
+	{
+		Position = CurrentPanelLocation + CurrentDelta;
+	}
+	else
+	{
+		Position = CurrentPanelLocation;
+	}
+	
+	return FMargin(Position.X, Position.Y, Size.X, Size.Y);
 }
