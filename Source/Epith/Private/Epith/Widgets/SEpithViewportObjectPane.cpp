@@ -16,7 +16,9 @@ void SEpithViewportObjectPane::Construct(const FArguments& InArgs)
 	
 	Root = InArgs._Root;
 	Target = InArgs._Target;
-
+	
+	PropertyData = MakeShared<FEpithPropertyDataContainer>(Target.Get());
+	
 	FCoreUObjectDelegates::OnObjectsReplaced.AddSP(this, &SEpithViewportObjectPane::OnObjectsReinstanced);
 	
 	Build();
@@ -29,6 +31,7 @@ void SEpithViewportObjectPane::OnObjectsReinstanced(const TMap<UObject*, UObject
 	if (NewTarget)
 	{
 		Target = *NewTarget;
+		PropertyData->RefreshPropertyHandles();
 		Build();
 	}
 }
@@ -43,8 +46,6 @@ void SEpithViewportObjectPane::Build()
 
 	UE_LOG(LogEpith, Display, TEXT("Rebuilding..."));
 	
-	PropertyData = MakeShared<FEpithPropertyDataContainer>(Target.Get());
-			
 	ChildSlot
 	[
 		SNew(SBorder)

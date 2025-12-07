@@ -50,7 +50,7 @@ void FEpithPropertyDataContainer::Build(TStrongObjectPtr<UObject> BuildTarget)
 			
 			if (!PropertyHandle)
 			{
-				UE_LOG(LogEpith, Display, TEXT("Null property handle for IDetailTreeNode: %s"), *PoppedNode->GetNodeName().ToString());
+				//UE_LOG(LogEpith, Display, TEXT("Null property handle for IDetailTreeNode: %s"), *PoppedNode->GetNodeName().ToString());
 				continue;
 			}
 			// TODO does GeneratePathToProperty ever generate invalid characters?
@@ -63,6 +63,16 @@ void FEpithPropertyDataContainer::Build(TStrongObjectPtr<UObject> BuildTarget)
 		}
 	}
 	
+}
+
+void FEpithPropertyDataContainer::RefreshPropertyHandles()
+{
+	AllPropertyHandles.Empty();
+	
+	for (auto [PropertyPath, TreeNode] : AllTreeNodes)
+	{
+		AllPropertyHandles.Add(PropertyPath, TreeNode->CreatePropertyHandle());
+	}
 }
 
 void FEpithPropertyDataContainer::GatherChildDetailTreeNodesRecursive(TSharedRef<IDetailTreeNode> ParentTreeNode, TArray<TSharedRef<IDetailTreeNode>>& PendingTreeNodes)

@@ -213,14 +213,7 @@ void FEpithStyle::SetupStyles()
 	// ============================================================================================
 	// BRUSHES - SVGs
 	// ============================================================================================
-	//	EPITH_DEFINE_BRUSH(FSlateVectorImageBrush,	Icon_Chevron_Right,				"Icon_Chevron_Right", ".svg",			FVector2f(16, 16), EpithColor::White);
-	EPITH_DEFINE_BRUSH(FSlateVectorImageBrush,	Icon_Hourglass,						"NodeIcons/Icon_Hourglass", ".svg",				FVector2f(20, 20), EpithColor::White);
-	EPITH_DEFINE_BRUSH(FSlateVectorImageBrush,	Icon_PauseHand,						"NodeIcons/Icon_PauseHand", ".svg",				FVector2f(20, 20), EpithColor::White);
-	EPITH_DEFINE_BRUSH(FSlateVectorImageBrush,	Icon_Plunger,						"NodeIcons/Icon_Plunger", ".svg",				FVector2f(20, 20), EpithColor::White);
-	EPITH_DEFINE_BRUSH(FSlateVectorImageBrush,	Icon_Plunger_Dim,					"NodeIcons/Icon_Plunger", ".svg",				FVector2f(20, 20), EpithColor::White_Trans);
-	EPITH_DEFINE_BRUSH(FSlateVectorImageBrush,	Icon_PortalIn,						"NodeIcons/Icon_PortalIn", ".svg",				FVector2f(20, 20), EpithColor::White);
-	EPITH_DEFINE_BRUSH(FSlateVectorImageBrush,	Icon_PortalOut,						"NodeIcons/Icon_PortalOut", ".svg",				FVector2f(20, 20), EpithColor::White);
-	
+	//	EPITH_DEFINE_BRUSH(FSlateVectorImageBrush,	Icon_Chevron_Right,				"Icon_Chevron_Right", ".svg",			FVector2f(16, 16), EpithColor::White);	
 	EPITH_DEFINE_BRUSH(FSlateBorderBrush,		Border_2px_Deburred,				"Border_2px_Deburred", ".png",					FMargin(0.5f, 0.5f), EpithColor::White);
 	EPITH_DEFINE_BRUSH(FSlateBoxBrush,			Border_TabShape,					"Border_TabShape", ".png",						FMargin(0.5f, 0.5f), EpithColor::White);
 	

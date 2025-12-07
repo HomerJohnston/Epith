@@ -1,5 +1,7 @@
 ﻿#include "Epith/Widgets/EpithWindowElement_Property.h"
 
+#include "DetailWidgetRow.h"
+#include "IDetailPropertyRow.h"
 #include "Epith/Misc/EpithPropertyDataContainer.h"
 
 #define LOCTEXT_NAMESPACE "Epith"
@@ -14,6 +16,82 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithProperty
 		return SNew(STextBlock)
 			.Text(LOCTEXT("Epith_MissingPropertyCategory", "NULL PROPERTY"));	
 	}
+	
+	FDetailWidgetRow NewRow;
+	TSharedPtr<IDetailPropertyRow> DetailPropertyRow = TreeNode->GetRow();
+	TSharedPtr<SWidget> NameWidget;
+	TSharedPtr<SWidget> ValueWidget;
+	DetailPropertyRow->GetDefaultWidgets(NameWidget, ValueWidget, NewRow, true);
+	
+	/*
+	TSharedPtr<SWidget> RowWidget = SNullWidget::NullWidget;
+	{
+ 
+		RowWidget = SNew(SSplitter)
+			.Style(FAppStyle::Get(), "PropertyTable.InViewport.Splitter")
+			.PhysicalSplitterHandleSize(1.0f)
+			 .HitDetectionSplitterHandleSize(5.0f)
+			 + SSplitter::Slot()
+			 .Value(ColumnSizeData.GetNameColumnWidth())
+			.OnSlotResized(ColumnSizeData.GetOnNameColumnResized())
+			 [
+				SNew(SBox)
+				.HAlign(HAlign_Left)
+				 .Padding(2.0f)
+				.Clipping(EWidgetClipping::OnDemand)
+				 [
+					NameWidget.ToSharedRef()
+				]
+			 ]
+			 + SSplitter::Slot()
+			 .Value(ColumnSizeData.GetValueColumnWidth())
+			 .OnSlotResized(ColumnSizeData.GetOnValueColumnResized())
+			 [
+				 SNew(SBox)
+				 .Padding(2.0f)
+				 [
+					 ValueWidget.ToSharedRef()
+				 ]
+			]
+			+ SSplitter::Slot()
+			.Value(ColumnSizeData.GetRightColumnWidth())
+			.OnSlotResized(ColumnSizeData.GetOnRightColumnResized())
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.VAlign(VAlign_Center)
+				.HAlign(HAlign_Center)
+				.Padding(2.0f)
+				[
+					ResetWidget.ToSharedRef()
+				]
+			];
+	}
+	*/
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
+	
 	
 	FNodeWidgets Widgets = TreeNode->CreateNodeWidgets();
 
@@ -30,12 +108,12 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithProperty
 		.AutoWidth()
 		.Padding(0, 0, 8, 0)
 		[
-			PropertyHandle->CreatePropertyNameWidget()
+			NameWidget.ToSharedRef()
 		]
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		[
-			PropertyHandle->CreatePropertyValueWidgetWithCustomization(nullptr)
+			ValueWidget.ToSharedRef()
 		];
 	}
 	

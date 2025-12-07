@@ -62,7 +62,7 @@ FReply SEpithViewportMasterPaneHeader::OnDragDetected(const FGeometry& MyGeometr
 	}
 
 	return FReply::Unhandled();
-	return SCompoundWidget::OnDragDetected(MyGeometry, MouseEvent);
+//	return SCompoundWidget::OnDragDetected(MyGeometry, MouseEvent);
 }
 
 FReply SEpithViewportMasterPaneHeader::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)

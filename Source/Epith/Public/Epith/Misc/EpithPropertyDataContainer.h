@@ -25,6 +25,8 @@ protected:
 	void OnObjectsReinstanced(const TMap<UObject*, UObject*>& ReplacementMap);
 	
 public:
+	void RefreshPropertyHandles();
+	
 	TSharedPtr<IPropertyHandle> FindPropertyHandle(FName PropertyPath)
 	{
 		TSharedPtr<IPropertyHandle>* Found = AllPropertyHandles.Find(PropertyPath);
