@@ -62,11 +62,13 @@ TSharedRef<SWidget> FPropertyTypeCustomization_EpithPropertySelector::OnGetMenuC
 	
 	UEpithPanelDefinition* PanelDefinition = Cast<UEpithPanelDefinition>(Outers[0]);	
 	
-	FEpithPropertyDataContainer PropertyData(PanelDefinition->GetTargetActorType());
+	FEpithPropertyDataContainer PropertyData(PanelDefinition->GetTargetClass());
 
 	using FClassPropertyHandles = TMap<FName, TSharedPtr<IPropertyHandle>>;
 	
 	TMap<UStruct*, FClassPropertyHandles> CategorizedPropertyMap;
+	
+	const auto TestPropertyHandles = PropertyData.GetPropertyHandles();
 	
 	for (const auto&[Name, Handle] : PropertyData.GetPropertyHandles())
 	{
@@ -81,6 +83,8 @@ TSharedRef<SWidget> FPropertyTypeCustomization_EpithPropertySelector::OnGetMenuC
 		{
 			continue;
 		}
+		
+		UE_LOG(LogEpith, Display, TEXT("Adding to property map: %s"), *OwnerType->GetName());
 		
 		FClassPropertyHandles& ClassPropertyHandles = CategorizedPropertyMap.FindOrAdd(OwnerType);
 		
@@ -106,6 +110,7 @@ TSharedRef<SWidget> FPropertyTypeCustomization_EpithPropertySelector::OnGetMenuC
 		
 		for (const auto&[Name, Handle] : PropertyHandles)
 		{
+			// UE_LOG(LogEpith, Display, TEXT("Adding Property: %s"), *Name.ToString());
 			MenuBuilder.AddMenuEntry(FText::FromName(Name), FText::GetEmpty(), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([this, Name]
 			{
 				PropertyPathProperty->SetValue(Name);

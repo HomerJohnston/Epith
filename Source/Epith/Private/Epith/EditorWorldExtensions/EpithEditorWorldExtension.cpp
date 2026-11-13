@@ -22,6 +22,7 @@ void UEpithEditorWorldExtension::Init()
 
 bool UEpithEditorWorldExtension::InputKey(FEditorViewportClient* InViewportClient, FViewport* Viewport, FKey Key, EInputEvent Event)
 {
+#if 0
 	if (Event == IE_DoubleClick)
 	{
 		UEditorActorSubsystem* EditorActorSubsystem = GEditor->GetEditorSubsystem<UEditorActorSubsystem>();
@@ -43,7 +44,7 @@ bool UEpithEditorWorldExtension::InputKey(FEditorViewportClient* InViewportClien
 
 		return TryShowPanel(Actor);
 	}
-
+#endif
 	return false;
 }
 
@@ -65,7 +66,7 @@ TArray<FEpithObjectWindowRootMatch> UEpithEditorWorldExtension::GetPanelRoots(co
 				continue;
 			}
 			
-			if (Object->GetClass()->IsChildOf(PanelDefinition->GetTargetActorType()))
+			if (Object->GetClass()->IsChildOf(PanelDefinition->GetTargetClass()))
 			{
 				Matches.Add( { Object, &PanelDefinition->GetRoot()->Get<FEpithWindowElement>() } );
 			}
@@ -92,7 +93,10 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target)
 	TArray<UObject*> Objects = GetAllObjects(Target);
 	TArray<FEpithObjectWindowRootMatch> ObjectWindowMatches = GetPanelRoots(Objects, PanelDefinitions);
 		
-	FVector2D ScreenPos = GetInitialScreenPos();
+	ObjectWindowMatches.Sort([](const FEpithObjectWindowRootMatch& First, const FEpithObjectWindowRootMatch& Second)
+	{
+		return First.Object->GetName() < Second.Object->GetName();
+	});
 		
 	int32 Panels = 0;
 	
@@ -136,6 +140,7 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target)
 		MasterPane_Int.ToSharedRef()
 	];
 	
+	// /*
 	static const FName LevelEditorName("LevelEditor");
 	if (FModuleManager::Get().IsModuleLoaded(LevelEditorName))
 	{
@@ -146,12 +151,20 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target)
 			ActiveLevelViewport->AddOverlayWidget(Canvas);
 		}
 	}
+	// */
+
+	/*
+	FWidgetPath Path;
+	FSlateApplication::Get().GeneratePathToWidgetUnchecked(Canvas, Path);
+	UE_LOG(LogEpith, Display, TEXT("Path to canvas: %s"), *Path.ToString());
+	*/
 	
 	/*
+	FVector2D ScreenPos = GetInitialScreenPos();
 	FSlateApplication::Get().PushMenu(
 		FSlateApplication::Get().GetUserFocusedWidget(0).ToSharedRef(),
-		FWidgetPath(),
-		MasterPane ,
+		Path,
+		MasterPane_Int.ToSharedRef(),
 		FDeprecateSlateVector2D(ScreenPos.X, ScreenPos.Y),
 		FPopupTransitionEffect(FPopupTransitionEffect::TypeInPopup),
 		true);
@@ -162,7 +175,7 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target)
 
 FVector2D UEpithEditorWorldExtension::GetInitialScreenPos()
 {
-	return {800, 400};
+	return {200, 100};
 }
 
 TArray<const UEpithPanelDefinition*> UEpithEditorWorldExtension::GetPanelDefinitions()

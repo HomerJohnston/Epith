@@ -14,7 +14,7 @@ class EPITH_API UEpithPanelDefinition : public UObject
 	friend class FPropertyTypeCustomization_EpithPropertySelector;
 	
 protected:
-	UPROPERTY(EditDefaultsOnly, Category = "Epith")
+	UPROPERTY(EditDefaultsOnly, Category = "Epith", meta = (AllowAbstract))
 	TSubclassOf<UObject> TargetClass;
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Epith|Appearance")
@@ -24,7 +24,7 @@ protected:
 	TInstancedStruct<FEpithWindowElement> Root;
 	
 public:
-	TSubclassOf<UObject> GetTargetActorType() const
+	TSubclassOf<UObject> GetTargetClass() const
 	{
 		return TargetClass;
 	}

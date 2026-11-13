@@ -23,78 +23,15 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithProperty
 	TSharedPtr<SWidget> ValueWidget;
 	DetailPropertyRow->GetDefaultWidgets(NameWidget, ValueWidget, NewRow, true);
 	
-	/*
-	TSharedPtr<SWidget> RowWidget = SNullWidget::NullWidget;
+	if (PropertyHandle->GetPropertyDisplayName().ToString().Contains("Color"))
 	{
- 
-		RowWidget = SNew(SSplitter)
-			.Style(FAppStyle::Get(), "PropertyTable.InViewport.Splitter")
-			.PhysicalSplitterHandleSize(1.0f)
-			 .HitDetectionSplitterHandleSize(5.0f)
-			 + SSplitter::Slot()
-			 .Value(ColumnSizeData.GetNameColumnWidth())
-			.OnSlotResized(ColumnSizeData.GetOnNameColumnResized())
-			 [
-				SNew(SBox)
-				.HAlign(HAlign_Left)
-				 .Padding(2.0f)
-				.Clipping(EWidgetClipping::OnDemand)
-				 [
-					NameWidget.ToSharedRef()
-				]
-			 ]
-			 + SSplitter::Slot()
-			 .Value(ColumnSizeData.GetValueColumnWidth())
-			 .OnSlotResized(ColumnSizeData.GetOnValueColumnResized())
-			 [
-				 SNew(SBox)
-				 .Padding(2.0f)
-				 [
-					 ValueWidget.ToSharedRef()
-				 ]
-			]
-			+ SSplitter::Slot()
-			.Value(ColumnSizeData.GetRightColumnWidth())
-			.OnSlotResized(ColumnSizeData.GetOnRightColumnResized())
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.VAlign(VAlign_Center)
-				.HAlign(HAlign_Center)
-				.Padding(2.0f)
-				[
-					ResetWidget.ToSharedRef()
-				]
-			];
+		FWidgetPath Path;
+		FSlateApplication::Get().GeneratePathToWidgetUnchecked(NameWidget.ToSharedRef(), Path);
+		UE_LOG(LogEpith, Display, TEXT("Path to canvas: %s"), *Path.ToString());
 	}
-	*/
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
-	
+		
 	FNodeWidgets Widgets = TreeNode->CreateNodeWidgets();
-
+		
 	TSharedPtr<SWidget> Row = nullptr;
 	
 	if (Widgets.WholeRowWidget)
@@ -102,6 +39,47 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithProperty
 		Row = Widgets.WholeRowWidget;
 	}
 	else if (Widgets.NameWidget && Widgets.ValueWidget)
+	{
+		Row = SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.Padding(0, 0, 8, 0)
+		[
+			/*
+			SNew(SButton)
+			.OnClicked_Lambda( [Widgets] ()
+			{
+				FWidgetPath Path;
+				FSlateApplication::Get().GeneratePathToWidgetChecked(Widgets.ValueWidget->GetAllChildren()[0].GetSlotAt(0).GetWidget()->GetAllChildren()[0].GetSlotAt(0).GetWidget()->GetAllChildren()[0].GetSlotAt(0).GetWidget()->GetAllChildren()[0].GetSlotAt(0).GetWidget()->GetAllChildren()[0].GetSlotAt(0).GetWidget(), Path);
+				UE_LOG(LogEpith, Display, TEXT("Path to canvas: %s"), *Path.ToString());
+				return FReply::Handled();
+			})
+			[
+				Widgets.NameWidget.ToSharedRef()
+			]
+			*/
+			NameWidget.ToSharedRef()
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			// What is this??? This is a dirty-ass hack. I discovered that color pickers CRASH because they can't find this widget when I instead display Widgets.ValueWidget
+			// This widget is the raw property widget and Widgets.ValueWidget uses the property type customization for the property, so I want the other one!
+			// I also found that changing the Visibility of ValueWidget caused it to break. It needs to be rendered and kept alive or something.
+			SNew(SBox)
+			.WidthOverride(0)
+			.RenderOpacity(0.0f)
+			[
+				ValueWidget.ToSharedRef()
+			]
+		]
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		[
+			Widgets.ValueWidget.ToSharedRef()
+		];
+	}
+	else
 	{
 		Row = SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot()
@@ -134,6 +112,17 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithProperty
 	TreeNode->GetChildren(TreeNodeChildren);
 	NumChildren = TreeNodeChildren.Num();
 	
+	/*
+	PropertyAndChildrenBox->AddSlot()
+	[
+		Widgets.NameWidget.ToSharedRef()
+	];
+	PropertyAndChildrenBox->AddSlot()
+	[
+		Widgets.ValueWidget.ToSharedRef()
+	];*/
+	
+#if 0
 	for (uint32 i = 0; i < NumChildren; ++i)
 	{
 		FNodeWidgets ChildWidgets = TreeNodeChildren[i]->CreateNodeWidgets();
@@ -156,7 +145,8 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithProperty
 			+ SHorizontalBox::Slot()
 			.FillWidth(0.5)
 			[
-				ChildWidgets.ValueWidget.ToSharedRef()
+				ChildPropertyHandle->CreatePropertyValueWidgetWithCustomization(nullptr)
+				//ChildWidgets.ValueWidget.ToSharedRef()
 			];
 		}
 		else
@@ -170,7 +160,7 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithProperty
 			ChildRow.ToSharedRef()
 		];
 	}
-	
+#endif
 	
 	return PropertyAndChildrenBox;
 }

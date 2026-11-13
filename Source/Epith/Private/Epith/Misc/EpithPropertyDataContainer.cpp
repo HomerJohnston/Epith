@@ -24,6 +24,11 @@ FEpithPropertyDataContainer::~FEpithPropertyDataContainer()
 
 void FEpithPropertyDataContainer::Build(TStrongObjectPtr<UObject> BuildTarget)
 {
+	// TODO this is re-running every time I change a property, can I fix that somehow?
+	AllTreeNodes.Empty();
+	AllPropertyHandles.Empty();
+	PropertyRowGenerator.Reset();
+	
 	static const FName PropertyEditorName = "PropertyEditor";
 
 	FPropertyEditorModule& PropertyEditor = FModuleManager::Get().LoadModuleChecked<FPropertyEditorModule>(PropertyEditorName);
@@ -55,6 +60,8 @@ void FEpithPropertyDataContainer::Build(TStrongObjectPtr<UObject> BuildTarget)
 			}
 			// TODO does GeneratePathToProperty ever generate invalid characters?
 			FName PathToProperty = FName(PropertyHandle->GeneratePathToProperty());
+			
+			// UE_LOG(LogEpith, Display, TEXT("Property: %s"), *PathToProperty.ToString());
 			
 			AllTreeNodes.Add(PathToProperty, PoppedNode);
 			AllPropertyHandles.Add(PathToProperty, PropertyHandle);
@@ -91,7 +98,7 @@ void FEpithPropertyDataContainer::GatherChildDetailTreeNodesRecursive(TSharedRef
 
 void FEpithPropertyDataContainer::OnObjectsReinstanced(const TMap<UObject*, UObject*>& ReplacementMap)
 {
-	UObject* const* NewTarget = ReplacementMap.Find(Target.Get());
+	UObject* const* NewTarget = ReplacementMap.Find(Target.Get(true));
 	
 	if (NewTarget)
 	{

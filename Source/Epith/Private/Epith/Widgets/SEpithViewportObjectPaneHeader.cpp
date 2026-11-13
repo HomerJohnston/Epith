@@ -14,6 +14,10 @@ void SEpithViewportObjectPaneHeader::Construct(const FArguments& InArgs)
 	{
 		Title = FText::FromString(TargetActor->GetActorLabel() + " Properties");
 	}
+	else if (UActorComponent* TargetActorComponent = Cast<UActorComponent>(InArgs._Target))
+	{
+		Title = FText::FromString(TargetActorComponent->GetName());
+	}
 	else
 	{
 		Title = FText::FromString(InArgs._Target->GetClass()->GetName());

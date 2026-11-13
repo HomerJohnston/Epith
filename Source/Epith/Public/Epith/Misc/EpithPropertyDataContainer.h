@@ -2,6 +2,7 @@
 
 #include "IDetailTreeNode.h"
 #include "PropertyHandle.h"
+#include "Epith/EpithLog.h"
 
 struct FEpithPropertyDataContainer
 {
@@ -10,9 +11,11 @@ public:
 
 	~FEpithPropertyDataContainer();
 	
+	void OnObjectsReinstanced(const TMap<UObject*, UObject*>& ReplacementMap);
+	
 protected:
 	TWeakObjectPtr<UObject> Target;
-	
+
 	TSharedPtr<class IPropertyRowGenerator> PropertyRowGenerator;
 	
 	TMap<FName, TSharedPtr<IDetailTreeNode>> AllTreeNodes;
@@ -21,9 +24,7 @@ protected:
 	void Build(TStrongObjectPtr<UObject> BuildTarget);
 	
 	void GatherChildDetailTreeNodesRecursive(TSharedRef<IDetailTreeNode> ParentTreeNode, TArray<TSharedRef<IDetailTreeNode>>& PendingTreeNodes);
-	
-	void OnObjectsReinstanced(const TMap<UObject*, UObject*>& ReplacementMap);
-	
+
 public:
 	void RefreshPropertyHandles();
 	
@@ -37,7 +38,7 @@ public:
 	TSharedPtr<IDetailTreeNode> FindTreeNode(FName PropertyPath)
 	{
 		TSharedPtr<IDetailTreeNode>* Found = AllTreeNodes.Find(PropertyPath);
-		
+				
 		return (Found) ? *Found : nullptr;
 	}
 	

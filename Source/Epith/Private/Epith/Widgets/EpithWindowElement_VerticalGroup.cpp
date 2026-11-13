@@ -29,7 +29,7 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(TSharedPtr<FEpithPro
 	
 		Box->AddSlot()
 		.AutoHeight()
-		.Padding(4, 4, 4, i == SlotsNum - 1 ? 4 : 0)
+		.Padding(4, 1, 4, i == SlotsNum - 1 ? 1 : 0)
 		[
 			SNew(SBorder)
 			.Padding(Slot.DisplayParams.Padding)

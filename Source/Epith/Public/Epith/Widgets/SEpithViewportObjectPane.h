@@ -18,7 +18,7 @@ class SEpithViewportObjectPane : public SCompoundWidget
 	void Construct(const FArguments& InArgs);
 	
 protected:
-	const FEpithWindowElement* Root;
+	const FEpithWindowElement* Root = nullptr;
 	TWeakObjectPtr<UObject> Target;
 	TSharedPtr<FEpithPropertyDataContainer> PropertyData;
 	

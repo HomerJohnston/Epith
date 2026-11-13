@@ -31,7 +31,9 @@ void SEpithViewportObjectPane::OnObjectsReinstanced(const TMap<UObject*, UObject
 	if (NewTarget)
 	{
 		Target = *NewTarget;
-		PropertyData->RefreshPropertyHandles();
+		//PropertyData->Target = *NewTarget;
+		PropertyData->OnObjectsReinstanced(ReplacementMap);
+		//PropertyData->RefreshPropertyHandles();
 		Build();
 	}
 }
@@ -44,8 +46,6 @@ void SEpithViewportObjectPane::Build()
 		return;
 	}
 
-	UE_LOG(LogEpith, Display, TEXT("Rebuilding..."));
-	
 	ChildSlot
 	[
 		SNew(SBorder)

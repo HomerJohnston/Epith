@@ -5,7 +5,9 @@
 #include "Epith/EpithLog.h"
 #include "Epith/Style/EpithColor.h"
 #include "Epith/Widgets/SEpithViewportMasterPaneHeader.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Viewports/InViewportUIDragOperation.h"
+#include "Widgets/Images/SImage.h"
 #include "Widgets/Layout/SBackgroundBlur.h"
 #include "Widgets/Layout/SConstraintCanvas.h"
 #include "Widgets/Layout/SPopup.h"
@@ -97,7 +99,7 @@ FReply SEpithViewportMasterPane::StartDragging(FVector2D InTabGrabScreenSpaceOff
 	bDragging = true;
 	StartDragCursorLocation = FSlateApplication::Get().GetCursorPos();
 	
-	SetRenderOpacity(0.8);
+	SetRenderOpacity(0.8f);
 	
 	return FReply::Handled().BeginDragDrop(DragDropOperation);
 }
