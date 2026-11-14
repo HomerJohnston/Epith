@@ -102,9 +102,6 @@ namespace EpithColor
 	
 	inline const FLinearColor Button_Unset() { return DarkGray; }
 
-	// Functions
-
-	const FLinearColor GetNominalFontColor(FLinearColor NodeColor, FLinearColor DarkNodeFontColor, FLinearColor LightNodeFontColor); 
 }
 
 #undef LOCTEXT_NAMESPACE

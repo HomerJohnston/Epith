@@ -2,8 +2,9 @@
 
 #include "EpithPropertySelector.generated.h"
 
-/** 
- *  
+/**
+ * Names a property on the panel definition's TargetClass by its property path (as produced by IPropertyHandle::GeneratePathToProperty).
+ * Edited through FPropertyTypeCustomization_EpithPropertySelector, which offers a dropdown of valid paths.
  */
 USTRUCT()
 struct FEpithPropertySelector
@@ -14,9 +15,6 @@ struct FEpithPropertySelector
 	
 protected:
 	UPROPERTY(EditAnywhere)
-	UObject* Object;
-	
-	UPROPERTY(EditAnywhere, meta = (GetOptions = "GetPropertyPaths"))
 	FName PropertyPath;
 
 public:

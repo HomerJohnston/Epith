@@ -2,23 +2,10 @@
 
 #pragma once
 
-#include "AssetTypeCategories.h"
-#include "Modules/ModuleManager.h"
+#include "AssetDefinition.h"
 
-#include "Epith/Private/GPGEditorModuleBase.h"
-
+/** Content Browser category that Epith assets are listed under. */
 struct FEpithAssetCategoryPaths : EAssetCategoryPaths
 {
 	static FAssetCategoryPath Epith;
-};
-
-class FEpithModule : public IModuleInterface, public FGPGEditorModuleBase
-{
-public:
-
-	static EAssetTypeCategories::Type EpithAssetCategory;
-	
-	/** IModuleInterface implementation */
-	virtual void StartupModule() override;
-	virtual void ShutdownModule() override;
 };

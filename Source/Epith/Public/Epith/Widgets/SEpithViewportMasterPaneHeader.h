@@ -8,7 +8,7 @@ class SEpithViewportMasterPaneHeader : public SCompoundWidget
 
 		SLATE_ARGUMENT(TSharedPtr<SEpithViewportMasterPane>, Parent)
 		
-		SLATE_ARGUMENT(FText, Title)
+		SLATE_ATTRIBUTE(FText, Title)
 		
 	SLATE_END_ARGS()
 	
@@ -16,7 +16,13 @@ class SEpithViewportMasterPaneHeader : public SCompoundWidget
 	
 	TWeakPtr<SEpithViewportMasterPane> ParentPtr;
 	
-	FReply OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	// Dragging the header moves the whole panel. Uses mouse capture rather than a drag-drop operation,
+	// so releasing the mouse anywhere (even outside the viewport) always ends the drag.
+	FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	
-	FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;;
+	FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	
+	FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	
+	void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
 };

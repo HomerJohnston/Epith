@@ -18,6 +18,9 @@ class SEpithViewportObjectPane : public SCompoundWidget
 	void Construct(const FArguments& InArgs);
 
 	~SEpithViewportObjectPane();
+	
+	/** False once the target has been destroyed (deleted, unloaded, or a construction-script component that was recreated). */
+	bool HasValidTarget() const { return Target.IsValid(); }
 
 protected:
 	/** Kept alive while the pane is open. The layout tree is read from it on every Build() and never cached, so editing the asset can't leave us with a dangling pointer. */

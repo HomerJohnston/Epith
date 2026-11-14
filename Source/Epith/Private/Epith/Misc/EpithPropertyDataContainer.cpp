@@ -13,13 +13,10 @@ FEpithPropertyDataContainer::FEpithPropertyDataContainer(UObject* InTarget)
 	Target = InTarget;
 	
 	Build(Target.Pin());
-	
-	//FCoreUObjectDelegates::OnObjectsReplaced.AddRaw(this, &FEpithPropertyDataContainer::OnObjectsReinstanced);
 }
 
 FEpithPropertyDataContainer::~FEpithPropertyDataContainer()
 {
-	//FCoreUObjectDelegates::OnObjectsReplaced.RemoveAll(this);
 }
 
 void FEpithPropertyDataContainer::Build(TStrongObjectPtr<UObject> BuildTarget)
@@ -27,6 +24,7 @@ void FEpithPropertyDataContainer::Build(TStrongObjectPtr<UObject> BuildTarget)
 	// TODO this is re-running every time I change a property, can I fix that somehow?
 	AllTreeNodes.Empty();
 	AllPropertyHandles.Empty();
+	ClaimedPaths.Empty();
 	PropertyRowGenerator.Reset();
 	
 	static const FName PropertyEditorName = "PropertyEditor";
@@ -35,19 +33,18 @@ void FEpithPropertyDataContainer::Build(TStrongObjectPtr<UObject> BuildTarget)
 	PropertyRowGenerator = PropertyEditor.CreatePropertyRowGenerator(FPropertyRowGeneratorArgs());
 	PropertyRowGenerator->SetObjects( { BuildTarget.Get() } );
 
-	TArray<TSharedRef<IDetailTreeNode>> TreeNodes;
-
 	TArray<TSharedRef<IDetailTreeNode>> PendingTreeNodes;
 	
 	PendingTreeNodes = PropertyRowGenerator->GetRootTreeNodes();
 
-	TArray<FName> CategoryStack;
-	
 	while (PendingTreeNodes.Num() > 0)
 	{
 		const TSharedRef<IDetailTreeNode> PoppedNode = PendingTreeNodes.Pop(EAllowShrinking::No);
 		
-		GatherChildDetailTreeNodesRecursive(PoppedNode, PendingTreeNodes);
+		// Queue direct children only; they'll queue their own children when popped. (Gathering recursively here as well visited deep nodes many times.)
+		TArray<TSharedRef<IDetailTreeNode>> Children;
+		PoppedNode->GetChildren(Children);
+		PendingTreeNodes.Append(Children);
 		
 		if (PoppedNode->GetNodeType() == EDetailNodeType::Item)
 		{
@@ -65,44 +62,7 @@ void FEpithPropertyDataContainer::Build(TStrongObjectPtr<UObject> BuildTarget)
 			
 			AllTreeNodes.Add(PathToProperty, PoppedNode);
 			AllPropertyHandles.Add(PathToProperty, PropertyHandle);
-			
-			TreeNodes.Add(PoppedNode);
 		}
 	}
 	
-}
-
-void FEpithPropertyDataContainer::RefreshPropertyHandles()
-{
-	AllPropertyHandles.Empty();
-	
-	for (auto [PropertyPath, TreeNode] : AllTreeNodes)
-	{
-		AllPropertyHandles.Add(PropertyPath, TreeNode->CreatePropertyHandle());
-	}
-}
-
-void FEpithPropertyDataContainer::GatherChildDetailTreeNodesRecursive(TSharedRef<IDetailTreeNode> ParentTreeNode, TArray<TSharedRef<IDetailTreeNode>>& PendingTreeNodes)
-{
-	TArray<TSharedRef<IDetailTreeNode>> Children;
-	
-	ParentTreeNode->GetChildren(Children);
-	
-	for (const TSharedRef<IDetailTreeNode> Child : Children)
-	{
-		GatherChildDetailTreeNodesRecursive(Child, PendingTreeNodes);
-	}
-
-	PendingTreeNodes.Append(Children);
-}
-
-void FEpithPropertyDataContainer::OnObjectsReinstanced(const TMap<UObject*, UObject*>& ReplacementMap)
-{
-	UObject* const* NewTarget = ReplacementMap.Find(Target.Get(true));
-	
-	if (NewTarget)
-	{
-		Target = *NewTarget;
-		Build(Target.Pin());
-	}
 }

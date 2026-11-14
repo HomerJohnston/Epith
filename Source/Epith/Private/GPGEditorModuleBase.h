@@ -266,7 +266,7 @@ private:
 
 			for (TPair<UAssetClass, UThumbnailClass>& Pair : ClassThumbnailRenderers)
 			{
-				ThumbnailManager.RegisterCustomRenderer(Pair.Key, Pair.Value);
+				ThumbnailManager.UnregisterCustomRenderer(Pair.Key);
 			}
 		}
 	}

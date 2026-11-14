@@ -6,7 +6,8 @@
 
 #include "EpithPanelDefinition.generated.h" 
 
-UCLASS(Blueprintable)
+/** An asset describing the layout of a viewport panel for objects of TargetClass. Not intended to be subclassed. */
+UCLASS()
 class EPITH_API UEpithPanelDefinition : public UObject
 {
 	GENERATED_BODY()
@@ -17,7 +18,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Epith", meta = (AllowAbstract))
 	TSubclassOf<UObject> TargetClass;
 	
+	/** Heading shown above this object's section of the panel. Leave empty to use the object's class name (or the component's name, for components). */
 	UPROPERTY(EditDefaultsOnly, Category = "Epith|Appearance")
+	FText Title;
+	
+	/** Minimum width of this object's section of the panel, in Slate units. */
+	UPROPERTY(EditDefaultsOnly, Category = "Epith|Appearance", meta = (ClampMin = 0, UIMin = 100, UIMax = 600))
 	float MinWidth = 180;
 	
 	UPROPERTY(EditDefaultsOnly, Category = "Epith", meta = (ShowOnlyInnerProperties, ExcludeBaseStruct))
@@ -27,6 +33,16 @@ public:
 	TSubclassOf<UObject> GetTargetClass() const
 	{
 		return TargetClass;
+	}
+	
+	const FText& GetTitle() const
+	{
+		return Title;
+	}
+	
+	float GetMinWidth() const
+	{
+		return MinWidth;
 	}
 	
 	const TInstancedStruct<FEpithWindowElement>* GetRoot() const

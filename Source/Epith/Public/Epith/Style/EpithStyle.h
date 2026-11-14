@@ -14,15 +14,6 @@
 
 struct FEpithBrushes
 {
-    FName None;
-
-    FName Icon_Hourglass;
-	FName Icon_PauseHand;
-	FName Icon_Plunger;
-	FName Icon_Plunger_Dim;
-	FName Icon_PortalIn;
-	FName Icon_PortalOut;
-	
 	FName Border_2px_Deburred;
 	FName Border_TabShape;
 	FName Background_ViewportMasterPanelHeader;
@@ -66,8 +57,6 @@ public:
 
     /** Unregisters and destroys the style set. Called from FEpithModule::ShutdownModule. */
     static void Shutdown();
-
-    static void ReloadTextures();
 	
 protected:
     static TSharedRef< class FSlateStyleSet > Create();

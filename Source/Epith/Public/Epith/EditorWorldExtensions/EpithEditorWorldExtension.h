@@ -5,6 +5,7 @@
 #include "EpithEditorWorldExtension.generated.h"
 
 class IAssetViewport;
+class SEpithViewportObjectPane;
 class UEpithPanelDefinition;
 
 struct FEpithObjectPanelMatch
@@ -34,6 +35,9 @@ public:
 
 	/** Builds and shows a panel for Target (and its subobjects) as an overlay on the given viewport. Returns false if nothing was shown. */
 	static bool TryShowPanel(UObject* Target, TSharedPtr<IAssetViewport> Viewport);
+	
+	/** Creates one object pane per object (Target and its subobjects) that has a matching panel definition. Target's own pane comes first. */
+	static TArray<TSharedRef<SEpithViewportObjectPane>> CreateObjectPanes(UObject* Target);
 
 	/** Finds the level editor viewport that is driven by the given viewport client. Returns null if the client doesn't belong to a level viewport. */
 	static TSharedPtr<IAssetViewport> FindLevelViewport(const FEditorViewportClient* ViewportClient);

@@ -102,51 +102,21 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target, TSharedPtr<IAsset
 	{
 		return false;
 	}
-
-	TArray<UEpithPanelDefinition*> PanelDefinitions = GetPanelDefinitions();
-
-	if (PanelDefinitions.Num() == 0)
-	{
-		return false;
-	}
-
-	TArray<UObject*> Objects = GetAllObjects(Target);
-	TArray<FEpithObjectPanelMatch> Matches = FindPanelMatches(Objects, PanelDefinitions);
-
-	// Keep the target itself first, then sort the rest by name.
-	Matches.StableSort([Target](const FEpithObjectPanelMatch& First, const FEpithObjectPanelMatch& Second)
-	{
-		if ((First.Object == Target) != (Second.Object == Target))
-		{
-			return First.Object == Target;
-		}
-
-		return First.Object->GetName() < Second.Object->GetName();
-	});
-
-	TArray<TSharedPtr<SWidget>> Panes;
-
-	for (const FEpithObjectPanelMatch& Match : Matches)
-	{
-		Panes.Add(SNew(SEpithViewportObjectPane)
-			.Target(Match.Object)
-			.PanelDefinition(Match.PanelDefinition));
-	}
-
-	if (Panes.Num() == 0)
-	{
-		return false;
-	}
-
+	
 	TSharedRef<SConstraintCanvas> Canvas = SNew(SConstraintCanvas);
-
+	
 	TSharedRef<SEpithViewportMasterPane> MasterPane = SNew(SEpithViewportMasterPane)
 		.Canvas(Canvas)
 		.Viewport(Viewport)
-		.ChildPanes(Panes);
-
+		.Target(Target);
+	
+	if (!MasterPane->HasPanes())
+	{
+		return false;
+	}
+	
 	TWeakPtr<SEpithViewportMasterPane> WeakMasterPane = MasterPane;
-
+	
 	Canvas->AddSlot()
 	.Alignment(FVector2D(0, 0))
 	.Anchors(FAnchors(0, 0))
@@ -159,10 +129,50 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target, TSharedPtr<IAsset
 	[
 		MasterPane
 	];
-
+	
 	Viewport->AddOverlayWidget(Canvas);
-
+	
 	return true;
+}
+
+TArray<TSharedRef<SEpithViewportObjectPane>> UEpithEditorWorldExtension::CreateObjectPanes(UObject* Target)
+{
+	TArray<TSharedRef<SEpithViewportObjectPane>> Panes;
+	
+	if (!IsValid(Target))
+	{
+		return Panes;
+	}
+	
+	TArray<UEpithPanelDefinition*> PanelDefinitions = GetPanelDefinitions();
+	
+	if (PanelDefinitions.Num() == 0)
+	{
+		return Panes;
+	}
+	
+	TArray<UObject*> Objects = GetAllObjects(Target);
+	TArray<FEpithObjectPanelMatch> Matches = FindPanelMatches(Objects, PanelDefinitions);
+	
+	// Keep the target itself first, then sort the rest by name.
+	Matches.StableSort([Target](const FEpithObjectPanelMatch& First, const FEpithObjectPanelMatch& Second)
+	{
+		if ((First.Object == Target) != (Second.Object == Target))
+		{
+			return First.Object == Target;
+		}
+		
+		return First.Object->GetName() < Second.Object->GetName();
+	});
+	
+	for (const FEpithObjectPanelMatch& Match : Matches)
+	{
+		Panes.Add(SNew(SEpithViewportObjectPane)
+			.Target(Match.Object)
+			.PanelDefinition(Match.PanelDefinition));
+	}
+	
+	return Panes;
 }
 
 TSharedPtr<IAssetViewport> UEpithEditorWorldExtension::FindLevelViewport(const FEditorViewportClient* ViewportClient)

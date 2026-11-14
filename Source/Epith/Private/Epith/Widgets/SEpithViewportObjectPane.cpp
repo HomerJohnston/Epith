@@ -20,8 +20,6 @@ void SEpithViewportObjectPane::Construct(const FArguments& InArgs)
 	PanelDefinition.Reset(InArgs._PanelDefinition);
 	Target = InArgs._Target;
 
-	PropertyData = MakeShared<FEpithPropertyDataContainer>(Target.Get());
-
 	FCoreUObjectDelegates::OnObjectsReplaced.AddSP(this, &SEpithViewportObjectPane::OnObjectsReinstanced);
 	FCoreUObjectDelegates::OnObjectPropertyChanged.AddSP(this, &SEpithViewportObjectPane::OnObjectPropertyChanged);
 
@@ -48,7 +46,6 @@ void SEpithViewportObjectPane::OnObjectsReinstanced(const TMap<UObject*, UObject
 	if (UObject* const* NewTarget = ReplacementMap.Find(Target.Get(true)))
 	{
 		Target = *NewTarget;
-		PropertyData->OnObjectsReinstanced(ReplacementMap);
 		bNeedsRebuild = true;
 	}
 
@@ -70,6 +67,14 @@ void SEpithViewportObjectPane::OnObjectPropertyChanged(UObject* Object, FPropert
 void SEpithViewportObjectPane::Build()
 {
 	TSharedPtr<SWidget> Content;
+	
+	// Always start from fresh property rows: a row's widgets can only be shown once, and the old ones belong to the tree we're replacing.
+	PropertyData.Reset();
+	
+	if (Target.IsValid())
+	{
+		PropertyData = MakeShared<FEpithPropertyDataContainer>(Target.Get());
+	}
 
 	if (!Target.IsValid())
 	{
@@ -99,6 +104,7 @@ void SEpithViewportObjectPane::Build()
 		[
 			SNew(SEpithViewportObjectPaneHeader)
 			.Target(Target.Get())
+			.TitleOverride(PanelDefinition.IsValid() ? PanelDefinition->GetTitle() : FText::GetEmpty())
 		];
 	}
 
@@ -116,7 +122,7 @@ void SEpithViewportObjectPane::Build()
 		.Padding(8)
 		[
 			SNew(SBox)
-			.MinDesiredWidth(180)
+			.MinDesiredWidth(PanelDefinition.IsValid() ? PanelDefinition->GetMinWidth() : 180.0f)
 			[
 				Box
 			]

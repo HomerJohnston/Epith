@@ -13,6 +13,10 @@ class UEpithEditorSubsystem : public UEditorSubsystem
 	GENERATED_BODY()
 
 	void Initialize(FSubsystemCollectionBase& Collection) override;
+	
+	void Deinitialize() override;
+	
+	void OnPreBeginPIE(bool bIsSimulating);
 
 	void OnPostWorldInitialization(UWorld* World, const UWorld::InitializationValues InitValues);
 	

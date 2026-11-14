@@ -8,6 +8,9 @@ class SEpithViewportObjectPaneHeader : public SCompoundWidget
 
 		SLATE_ARGUMENT(UObject*, Target)
 		
+		/** If not empty, shown instead of the automatic title. */
+		SLATE_ARGUMENT(FText, TitleOverride)
+
 	SLATE_END_ARGS()
 	
 	void Construct(const FArguments& InArgs);

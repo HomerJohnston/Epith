@@ -15,6 +15,4 @@ struct FEpithWindowElement_Property : public FEpithWindowElement
 	FEpithPropertySelector PropertySelector;
 	
 	TSharedPtr<SWidget> Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const override;
-	
-	void RecursiveDrawRowChildren(TSharedPtr<FEpithPropertyDataContainer> InPropertyData, TSharedPtr<IDetailTreeNode> TreeNode, TArray<TSharedRef<SWidget>>& Widgets);
 };

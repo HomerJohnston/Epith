@@ -1,225 +1,103 @@
 ﻿#include "Epith/Widgets/EpithWindowElement_Property.h"
 
-#include "DetailWidgetRow.h"
-#include "IDetailPropertyRow.h"
+#include "Engine/BlueprintGeneratedClass.h"
 #include "Epith/Misc/EpithPropertyDataContainer.h"
+#include "Styling/StyleColors.h"
 
 #define LOCTEXT_NAMESPACE "Epith"
 
 TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const
 {
-	TSharedPtr<IPropertyHandle> PropertyHandle = InPropertyData->FindPropertyHandle(PropertySelector.GetPropertyPath());
-	TSharedPtr<IDetailTreeNode> TreeNode = InPropertyData->FindTreeNode(PropertySelector.GetPropertyPath());
+	const FName PropertyPath = PropertySelector.GetPropertyPath();
 	
-	if (!PropertyHandle.IsValid() || !TreeNode.IsValid())
+	if (PropertyPath.IsNone())
+	{
+		return nullptr;
+	}
+	
+	TSharedPtr<IDetailTreeNode> TreeNode = InPropertyData->FindTreeNode(PropertyPath);
+	
+	if (!TreeNode.IsValid())
 	{
 		return SNew(STextBlock)
-			.Text(LOCTEXT("Epith_MissingPropertyCategory", "NULL PROPERTY"));	
+			.Text(FText::Format(LOCTEXT("PropertyElement_Missing", "Missing property: {0}"), FText::FromName(PropertyPath)))
+			.ColorAndOpacity(FSlateColor(EStyleColor::Warning));
 	}
 	
-	FDetailWidgetRow NewRow;
-	TSharedPtr<IDetailPropertyRow> DetailPropertyRow = TreeNode->GetRow();
-	TSharedPtr<SWidget> NameWidget;
-	TSharedPtr<SWidget> ValueWidget;
-	DetailPropertyRow->GetDefaultWidgets(NameWidget, ValueWidget, NewRow, true);
-	
-	if (PropertyHandle->GetPropertyDisplayName().ToString().Contains("Color"))
+	// A property row's widgets can only live in one place. Its type customization (e.g. the color picker) keeps pointers to the
+	// widgets it made, so we must show exactly the widgets from the one CreateNodeWidgets() call and never generate a second set.
+	// (The old code also called IDetailPropertyRow::GetDefaultWidgets, which re-runs the customization's CustomizeHeader and
+	// repoints it at a second, hidden set of widgets; that is what made color pickers crash unless the hidden set stayed alive.)
+	if (!InPropertyData->TryClaimPath(PropertyPath))
 	{
-		FWidgetPath Path;
-		FSlateApplication::Get().GeneratePathToWidgetUnchecked(NameWidget.ToSharedRef(), Path);
-		UE_LOG(LogEpith, Display, TEXT("Path to canvas: %s"), *Path.ToString());
+		return SNew(STextBlock)
+			.Text(FText::Format(LOCTEXT("PropertyElement_Duplicate", "{0} is already shown in this panel"), FText::FromName(PropertyPath)))
+			.ColorAndOpacity(FSlateColor(EStyleColor::Warning));
 	}
-		
+	
 	FNodeWidgets Widgets = TreeNode->CreateNodeWidgets();
-		
-	TSharedPtr<SWidget> Row = nullptr;
 	
-	if (Widgets.WholeRowWidget)
+	TSharedPtr<SWidget> RowWidget;
+	
+	if (Widgets.WholeRowWidget.IsValid())
 	{
-		Row = Widgets.WholeRowWidget;
+		RowWidget = Widgets.WholeRowWidget;
 	}
-	else if (Widgets.NameWidget && Widgets.ValueWidget)
+	else if (!Widgets.NameWidget.IsValid() && !Widgets.ValueWidget.IsValid())
 	{
-		Row = SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(0, 0, 8, 0)
-		[
-			/*
-			SNew(SButton)
-			.OnClicked_Lambda( [Widgets] ()
-			{
-				FWidgetPath Path;
-				FSlateApplication::Get().GeneratePathToWidgetChecked(Widgets.ValueWidget->GetAllChildren()[0].GetSlotAt(0).GetWidget()->GetAllChildren()[0].GetSlotAt(0).GetWidget()->GetAllChildren()[0].GetSlotAt(0).GetWidget()->GetAllChildren()[0].GetSlotAt(0).GetWidget()->GetAllChildren()[0].GetSlotAt(0).GetWidget(), Path);
-				UE_LOG(LogEpith, Display, TEXT("Path to canvas: %s"), *Path.ToString());
-				return FReply::Handled();
-			})
-			[
-				Widgets.NameWidget.ToSharedRef()
-			]
-			*/
-			NameWidget.ToSharedRef()
-		]
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		[
-			// What is this??? This is a dirty-ass hack. I discovered that color pickers CRASH because they can't find this widget when I instead display Widgets.ValueWidget
-			// This widget is the raw property widget and Widgets.ValueWidget uses the property type customization for the property, so I want the other one!
-			// I also found that changing the Visibility of ValueWidget caused it to break. It needs to be rendered and kept alive or something.
-			SNew(SBox)
-			.WidthOverride(0)
-			.RenderOpacity(0.0f)
-			[
-				ValueWidget.ToSharedRef()
-			]
-		]
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		[
-			Widgets.ValueWidget.ToSharedRef()
-		];
+		return SNew(STextBlock)
+			.Text(FText::Format(LOCTEXT("PropertyElement_NoWidgets", "{0} has no widgets to show"), FText::FromName(PropertyPath)))
+			.ColorAndOpacity(FSlateColor(EStyleColor::Warning));
 	}
 	else
 	{
-		Row = SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.Padding(0, 0, 8, 0)
-		[
-			NameWidget.ToSharedRef()
-		]
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		[
-			ValueWidget.ToSharedRef()
-		];
-	}
-	
-	if (!Row)
-	{
-		return SNew(STextBlock).Text(INVTEXT("ERROR - No widgets!"));
-	}
-	
-	TSharedPtr<SVerticalBox> PropertyAndChildrenBox = SNew(SVerticalBox);
-	PropertyAndChildrenBox->AddSlot()
-	.AutoHeight()
-	[
-		Row.ToSharedRef()
-	];
-	
-	uint32 NumChildren;
-	TArray<TSharedRef<IDetailTreeNode>> TreeNodeChildren;
-	TreeNode->GetChildren(TreeNodeChildren);
-	NumChildren = TreeNodeChildren.Num();
-	
-	/*
-	PropertyAndChildrenBox->AddSlot()
-	[
-		Widgets.NameWidget.ToSharedRef()
-	];
-	PropertyAndChildrenBox->AddSlot()
-	[
-		Widgets.ValueWidget.ToSharedRef()
-	];*/
-	
-#if 0
-	for (uint32 i = 0; i < NumChildren; ++i)
-	{
-		FNodeWidgets ChildWidgets = TreeNodeChildren[i]->CreateNodeWidgets();
-		TSharedPtr<IPropertyHandle> ChildPropertyHandle = TreeNodeChildren[i]->CreatePropertyHandle();
-		TSharedPtr<SWidget> ChildRow = nullptr;
+		TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox);
 		
-		if (ChildWidgets.WholeRowWidget)
+		if (Widgets.NameWidget.IsValid())
 		{
-			ChildRow = ChildWidgets.WholeRowWidget;
-		}
-		else if (ChildWidgets.NameWidget && ChildWidgets.ValueWidget)
-		{
-			ChildRow = SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
+			Row->AddSlot()
 			.AutoWidth()
+			.VAlign(VAlign_Center)
 			.Padding(0, 0, 8, 0)
 			[
-				ChildWidgets.NameWidget.ToSharedRef()
-			]
-			+ SHorizontalBox::Slot()
-			.FillWidth(0.5)
-			[
-				ChildPropertyHandle->CreatePropertyValueWidgetWithCustomization(nullptr)
-				//ChildWidgets.ValueWidget.ToSharedRef()
-			];
-		}
-		else
-		{
-			continue;
-		}
-		
-		PropertyAndChildrenBox->AddSlot()
-		.AutoHeight()
-		[
-			ChildRow.ToSharedRef()
-		];
-	}
-#endif
-	
-	return PropertyAndChildrenBox;
-}
-
-void FEpithWindowElement_Property::RecursiveDrawRowChildren(TSharedPtr<FEpithPropertyDataContainer> InPropertyData, TSharedPtr<IDetailTreeNode> TreeNode, TArray<TSharedRef<SWidget>>& Widgets)
-{
-	/*
-	FName __Category = Category;
-	
-	if (__Category == NAME_None)
-	{
-		__Category = InPropertyData->DefaultCategory;
-	}
-
-	TSharedPtr<FEpithPropertyCategoryContainer>* CategoryData = InPropertyData.Get()->Categories.Find(__Category);
-	
-	if (CategoryData)
-	{
-		// Draw this guy
-		TSharedPtr<IPropertyHandle>* PropertyHandle = CategoryData->Get()->PropertyHandles.Find(Property);
-		
-		FNodeWidgets NodeWidgets = TreeNode->CreateNodeWidgets();
-
-		TSharedPtr<SWidget> Row;
-		
-		if (NodeWidgets.WholeRowWidget)
-		{
-			Row = NodeWidgets.WholeRowWidget;
-		}
-		else
-		{
-			Row = SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
-				PropertyHandle->Get()->CreatePropertyNameWidget()
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			[
-				PropertyHandle->Get()->CreatePropertyValueWidgetWithCustomization(nullptr)
+				Widgets.NameWidget.ToSharedRef()
 			];
 		}
 		
-		if (Row)
+		if (Widgets.ValueWidget.IsValid())
 		{
-			Widgets.Add(Row.ToSharedRef());
+			Row->AddSlot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				Widgets.ValueWidget.ToSharedRef()
+			];
 		}
 		
-		// Draw children
-		TArray<TSharedRef<IDetailTreeNode>> TreeNodeChildren;
-		TreeNode->GetChildren(TreeNodeChildren);
-		
-		for (TSharedRef<IDetailTreeNode> Child : TreeNodeChildren)
-		{
-			RecursiveDrawRowChildren(InPropertyData, Child, Widgets);
-		}
+		RowWidget = Row;
 	}
-	*/	
+	
+	// The details system includes EditDefaultsOnly properties (and Blueprint variables that aren't Instance Editable) in the rows,
+	// but they aren't meant to be changed on placed instances. Show them read-only, the way the class defaults would look.
+	const FProperty* EditBlocker = FEpithPropertyDataContainer::FindInstanceEditBlocker(InPropertyData->FindPropertyHandle(PropertyPath));
+	
+	if (EditBlocker && InPropertyData->IsEditingInstance())
+	{
+		const bool bIsBlueprintVariable = Cast<UBlueprintGeneratedClass>(EditBlocker->GetOwnerClass()) != nullptr;
+		
+		const FText Reason = bIsBlueprintVariable
+			? FText::Format(LOCTEXT("PropertyElement_ReadOnlyBlueprint", "Read-only: {0} isn't Instance Editable. To edit it here, open the Blueprint and click the eye icon next to the variable."), EditBlocker->GetDisplayNameText())
+			: FText::Format(LOCTEXT("PropertyElement_ReadOnlyDefaults", "Read-only: {0} is EditDefaultsOnly, so it can only be changed on the class defaults."), EditBlocker->GetDisplayNameText());
+		
+		return SNew(SBox)
+			.IsEnabled(false)
+			.ToolTipText(Reason)
+			[
+				RowWidget.ToSharedRef()
+			];
+	}
+	
+	return RowWidget;
 }
 
 #undef LOCTEXT_NAMESPACE

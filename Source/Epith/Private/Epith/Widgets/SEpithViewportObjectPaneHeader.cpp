@@ -8,19 +8,20 @@ void SEpithViewportObjectPaneHeader::Construct(const FArguments& InArgs)
 {
 	const FSlateBrush* ActorIcon = FSlateIconFinder::FindIconBrushForClass(InArgs._Target->GetClass());
 	
-	FText Title = INVTEXT("Properties");
+	// The master pane's header already shows the actor's label, so sections default to what the object *is*:
+	// the class name for the actor itself and other objects, the component's name for components.
+	FText Title = InArgs._TitleOverride;
 	
-	if (AActor* TargetActor = Cast<AActor>(InArgs._Target))
+	if (Title.IsEmpty())
 	{
-		Title = FText::FromString(TargetActor->GetActorLabel() + " Properties");
-	}
-	else if (UActorComponent* TargetActorComponent = Cast<UActorComponent>(InArgs._Target))
-	{
-		Title = FText::FromString(TargetActorComponent->GetName());
-	}
-	else
-	{
-		Title = FText::FromString(InArgs._Target->GetClass()->GetName());
+		if (UActorComponent* TargetActorComponent = Cast<UActorComponent>(InArgs._Target))
+		{
+			Title = FText::FromString(TargetActorComponent->GetName());
+		}
+		else
+		{
+			Title = InArgs._Target->GetClass()->GetDisplayNameText();
+		}
 	}
 	
 	ChildSlot

@@ -36,7 +36,10 @@ void SEpithViewportMasterPaneHeader::Construct(const FArguments InArgs)
 					.NormalPaddingOverride(FMargin(0))
 					.OnClicked_Lambda( [this] ()
 					{
-						ParentPtr.Pin()->Close();
+						if (TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin())
+						{
+							PinnedParent->Close();
+						}
 						return FReply::Handled();
 					})
 					[
@@ -50,24 +53,61 @@ void SEpithViewportMasterPaneHeader::Construct(const FArguments InArgs)
 	];
 }
 
-FReply SEpithViewportMasterPaneHeader::OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
-{
-	// Need to remember where within a tab we grabbed
-	const FVector2D TabGrabScreenSpaceOffset = MouseEvent.GetScreenSpacePosition() - MyGeometry.GetAbsolutePosition();
-
-	TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin();
-	if (PinnedParent.IsValid())
-	{
-		return PinnedParent->StartDragging(/*TabGrabScreenSpaceOffset*/MouseEvent.GetScreenSpacePosition(), MouseEvent);
-	}
-
-	return FReply::Unhandled();
-//	return SCompoundWidget::OnDragDetected(MyGeometry, MouseEvent);
-}
-
 FReply SEpithViewportMasterPaneHeader::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
 {
-	return FReply::Handled().DetectDrag(SharedThis(this), EKeys::LeftMouseButton);
+	if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+	{
+		return FReply::Unhandled();
+	}
+	
+	TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin();
+	
+	if (!PinnedParent.IsValid())
+	{
+		return FReply::Unhandled();
+	}
+	
+	PinnedParent->BeginDrag(MouseEvent.GetScreenSpacePosition());
+	
+	return FReply::Handled().CaptureMouse(SharedThis(this));
+}
+
+FReply SEpithViewportMasterPaneHeader::OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	if (!HasMouseCapture())
+	{
+		return FReply::Unhandled();
+	}
+	
+	if (TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin())
+	{
+		PinnedParent->UpdateDrag(MouseEvent.GetScreenSpacePosition());
+	}
+	
+	return FReply::Handled();
+}
+
+FReply SEpithViewportMasterPaneHeader::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	if (!HasMouseCapture() || MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+	{
+		return FReply::Unhandled();
+	}
+	
+	if (TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin())
+	{
+		PinnedParent->EndDrag();
+	}
+	
+	return FReply::Handled().ReleaseMouseCapture();
+}
+
+void SEpithViewportMasterPaneHeader::OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)
+{
+	if (TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin())
+	{
+		PinnedParent->EndDrag();
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

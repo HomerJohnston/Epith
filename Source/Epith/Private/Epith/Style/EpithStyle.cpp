@@ -38,15 +38,6 @@ FEpithFonts EpithFonts;
 
 // ------------------------------------------------------------------------------------------------
 
-/** Loads a TTF from disk */
-#define EPITH_LOAD_FONT(NAME, RESOURCE_PATH, SIZE)\
-	TSharedRef<FCompositeFont> SourceCompositeFont_##NAME = MakeShared<FStandaloneCompositeFont>();\
-	SourceCompositeFont_##NAME->DefaultTypeface.AppendFont(TEXT("Regular"), Epith::FileUtilities::GetResourcesFolder() / RESOURCE_PATH, EFontHinting::Default, EFontLoadingPolicy::LazyLoad);\
-	EpithFonts.NAME = FSlateFontInfo(SourceCompositeFont_##NAME, SIZE);\
-	FSlateFontInfo& NAME = EpithFonts.NAME
-
-// ------------------------------------------------------------------------------------------------
-
 /** Define a new brush */
 #define EPITH_DEFINE_BRUSH(TYPE, BRUSHNAME, FILENAME, EXTENSION, ...)\
 	EpithBrushes.BRUSHNAME = EPITH_QUOTE(BRUSHNAME);\
@@ -173,14 +164,6 @@ void FEpithStyle::Shutdown()
 	Textures.Empty();
 }
 
-void FEpithStyle::ReloadTextures()
-{
-	if (FSlateApplication::IsInitialized())
-	{
-		FSlateApplication::Get().GetRenderer()->ReloadTextureResources();
-	}
-}
-
 TSharedRef<class FSlateStyleSet> FEpithStyle::Create()
 {
 	TSharedRef<FSlateStyleSet> Style = MakeShareable(new FSlateStyleSet(GetStyleSetName()));
@@ -204,8 +187,6 @@ const ISlateStyle* FEpithStyle::GetParentStyle()
 
 void FEpithStyle::SetupStyles()
 {
-	EPITH_REDEFINE_UE_BRUSH(FSlateImageBrush,			None,							FAppStyle,	"NoBorder",					FVector2f(16, 16), EpithColor::Transparent);
-
 	// ============================================================================================
 	// FONTS
 	// Format: EPITH_DEFINE_FONT(FName DefinitionName, FString StyleName, int Size);
