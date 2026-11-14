@@ -14,8 +14,6 @@ class UEpithEditorSubsystem : public UEditorSubsystem
 
 	void Initialize(FSubsystemCollectionBase& Collection) override;
 
-	void OnEditorInitialized(double StartupTime);
-	
 	void OnPostWorldInitialization(UWorld* World, const UWorld::InitializationValues InitValues);
 	
 	UPROPERTY()

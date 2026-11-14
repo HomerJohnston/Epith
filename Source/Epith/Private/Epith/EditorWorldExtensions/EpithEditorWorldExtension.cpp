@@ -2,18 +2,14 @@
 
 #include "IAssetViewport.h"
 #include "LevelEditor.h"
+#include "SLevelViewport.h"
 #include "AssetRegistry/AssetRegistryModule.h"
+#include "Epith/EpithLog.h"
 #include "Epith/EpithPanelDefinition.h"
-#include "Epith/DeveloperSettings/EpithProjectSettings.h"
-#include "Epith/Misc/EpithPropertyDataContainer.h"
-#include "Epith/Style/EpithColor.h"
-#include "Epith/Subsystems/EpithEditorSubsystem.h"
 #include "Epith/Widgets/SEpithViewportMasterPane.h"
 #include "Epith/Widgets/SEpithViewportObjectPane.h"
 #include "Subsystems/EditorActorSubsystem.h"
 #include "Widgets/Layout/SConstraintCanvas.h"
-
-const FName EpithMetaDataKey = TEXT("Epith");
 
 void UEpithEditorWorldExtension::Init()
 {
@@ -22,196 +18,210 @@ void UEpithEditorWorldExtension::Init()
 
 bool UEpithEditorWorldExtension::InputKey(FEditorViewportClient* InViewportClient, FViewport* Viewport, FKey Key, EInputEvent Event)
 {
-#if 0
-	if (Event == IE_DoubleClick)
+	if (Key != EKeys::LeftMouseButton || Event != IE_DoubleClick)
 	{
-		UEditorActorSubsystem* EditorActorSubsystem = GEditor->GetEditorSubsystem<UEditorActorSubsystem>();
-		TArray<AActor*> SelectedActors;
-		
-		if (!EditorActorSubsystem)
-		{
-			return false;
-		}
-
-		SelectedActors = EditorActorSubsystem->GetSelectedLevelActors();
-		
-		if (SelectedActors.Num() != 1)
-		{
-			return false;
-		}
-
-		AActor* Actor = SelectedActors[0];
-
-		return TryShowPanel(Actor);
+		return false;
 	}
-#endif
-	return false;
+
+	UEditorActorSubsystem* EditorActorSubsystem = GEditor->GetEditorSubsystem<UEditorActorSubsystem>();
+
+	if (!EditorActorSubsystem)
+	{
+		return false;
+	}
+
+	TArray<AActor*> SelectedActors = EditorActorSubsystem->GetSelectedLevelActors();
+
+	if (SelectedActors.Num() != 1)
+	{
+		return false;
+	}
+
+	// Only react to double-clicks in level editor viewports, and show the panel in the viewport that was clicked.
+	TSharedPtr<IAssetViewport> ClickedViewport = FindLevelViewport(InViewportClient);
+
+	if (!ClickedViewport.IsValid())
+	{
+		return false;
+	}
+
+	return TryShowPanel(SelectedActors[0], ClickedViewport);
 }
 
-TArray<FEpithObjectWindowRootMatch> UEpithEditorWorldExtension::GetPanelRoots(const TArray<UObject*>& Objects, const TArray<const UEpithPanelDefinition*>& PanelDefinitions)
+TArray<FEpithObjectPanelMatch> UEpithEditorWorldExtension::FindPanelMatches(const TArray<UObject*>& Objects, const TArray<UEpithPanelDefinition*>& PanelDefinitions)
 {
-	TArray<FEpithObjectWindowRootMatch> Matches;
-	
+	TArray<FEpithObjectPanelMatch> Matches;
+
 	for (UObject* Object : Objects)
 	{
 		if (!IsValid(Object))
 		{
 			continue;
 		}
-		
-		for (const UEpithPanelDefinition* PanelDefinition : PanelDefinitions)
+
+		const UClass* ObjectClass = Object->GetClass();
+
+		UEpithPanelDefinition* BestDefinition = nullptr;
+		const UClass* BestClass = nullptr;
+
+		for (UEpithPanelDefinition* PanelDefinition : PanelDefinitions)
 		{
-			if (!PanelDefinition->HasRoot())
+			const UClass* TargetClass = PanelDefinition->GetTargetClass();
+
+			if (!TargetClass || !PanelDefinition->HasRoot() || !ObjectClass->IsChildOf(TargetClass))
 			{
 				continue;
 			}
-			
-			if (Object->GetClass()->IsChildOf(PanelDefinition->GetTargetClass()))
+
+			if (!BestClass || TargetClass->IsChildOf(BestClass))
 			{
-				Matches.Add( { Object, &PanelDefinition->GetRoot()->Get<FEpithWindowElement>() } );
+				if (BestClass == TargetClass)
+				{
+					UE_LOG(LogEpith, Warning, TEXT("Panel definitions [%s] and [%s] both target class [%s]; using [%s]."),
+						*BestDefinition->GetPathName(), *PanelDefinition->GetPathName(), *TargetClass->GetName(), *BestDefinition->GetPathName());
+					continue;
+				}
+
+				BestDefinition = PanelDefinition;
+				BestClass = TargetClass;
 			}
 		}
+
+		if (BestDefinition)
+		{
+			Matches.Emplace(Object, BestDefinition);
+		}
 	}
-	
+
 	return Matches;
 }
 
-bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target)
+bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target, TSharedPtr<IAssetViewport> Viewport)
 {
-	if (!IsValid(Target))
+	if (!IsValid(Target) || !Viewport.IsValid())
 	{
 		return false;
 	}
-	
-	TArray<const UEpithPanelDefinition*> PanelDefinitions = GetPanelDefinitions();
-	
+
+	TArray<UEpithPanelDefinition*> PanelDefinitions = GetPanelDefinitions();
+
 	if (PanelDefinitions.Num() == 0)
 	{
 		return false;
 	}
-	
+
 	TArray<UObject*> Objects = GetAllObjects(Target);
-	TArray<FEpithObjectWindowRootMatch> ObjectWindowMatches = GetPanelRoots(Objects, PanelDefinitions);
-		
-	ObjectWindowMatches.Sort([](const FEpithObjectWindowRootMatch& First, const FEpithObjectWindowRootMatch& Second)
+	TArray<FEpithObjectPanelMatch> Matches = FindPanelMatches(Objects, PanelDefinitions);
+
+	// Keep the target itself first, then sort the rest by name.
+	Matches.StableSort([Target](const FEpithObjectPanelMatch& First, const FEpithObjectPanelMatch& Second)
 	{
+		if ((First.Object == Target) != (Second.Object == Target))
+		{
+			return First.Object == Target;
+		}
+
 		return First.Object->GetName() < Second.Object->GetName();
 	});
-		
-	int32 Panels = 0;
-	
-	TArray<TSharedPtr<SWidget>> Panes;
-	
-	for (const FEpithObjectWindowRootMatch& Match : ObjectWindowMatches)
-	{
-		UObject* CurrentTarget = Match.Object;
-		const FEpithWindowElement* RootWindowElement = Match.WindowRoot;
 
-		TSharedPtr<SWidget> Widget = SNew(SEpithViewportObjectPane)
-			.Target(CurrentTarget)
-			//.PropertyData(PropertyData)
-			.Root(RootWindowElement);
-	
-		if (!Widget)
-		{
-			continue;
-		}
-		
-		Panes.Add(Widget);
-		
-		++Panels;
+	TArray<TSharedPtr<SWidget>> Panes;
+
+	for (const FEpithObjectPanelMatch& Match : Matches)
+	{
+		Panes.Add(SNew(SEpithViewportObjectPane)
+			.Target(Match.Object)
+			.PanelDefinition(Match.PanelDefinition));
 	}
-	
+
+	if (Panes.Num() == 0)
+	{
+		return false;
+	}
+
 	TSharedRef<SConstraintCanvas> Canvas = SNew(SConstraintCanvas);
-	
-	TSharedPtr<SEpithViewportMasterPane> MasterPane_Int = SNew(SEpithViewportMasterPane)
+
+	TSharedRef<SEpithViewportMasterPane> MasterPane = SNew(SEpithViewportMasterPane)
 		.Canvas(Canvas)
+		.Viewport(Viewport)
 		.ChildPanes(Panes);
-	
-	SConstraintCanvas::FSlot::FSlotArguments& Slot = Canvas->AddSlot()
+
+	TWeakPtr<SEpithViewportMasterPane> WeakMasterPane = MasterPane;
+
+	Canvas->AddSlot()
 	.Alignment(FVector2D(0, 0))
 	.Anchors(FAnchors(0, 0))
-	.Offset_Lambda([MasterPane_Int]()
+	.Offset_Lambda([WeakMasterPane]()
 	{
-		return MasterPane_Int->GetOffset();
+		TSharedPtr<SEpithViewportMasterPane> Pinned = WeakMasterPane.Pin();
+		return Pinned.IsValid() ? Pinned->GetOffset() : FMargin(0);
 	})
 	.AutoSize(true)
 	[
-		MasterPane_Int.ToSharedRef()
+		MasterPane
 	];
-	
-	// /*
-	static const FName LevelEditorName("LevelEditor");
-	if (FModuleManager::Get().IsModuleLoaded(LevelEditorName))
+
+	Viewport->AddOverlayWidget(Canvas);
+
+	return true;
+}
+
+TSharedPtr<IAssetViewport> UEpithEditorWorldExtension::FindLevelViewport(const FEditorViewportClient* ViewportClient)
+{
+	if (!ViewportClient)
 	{
-		FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>(LevelEditorName);
-		TSharedPtr<IAssetViewport> ActiveLevelViewport = LevelEditorModule.GetFirstActiveViewport();
-		if (ActiveLevelViewport.IsValid())
+		return nullptr;
+	}
+
+	static const FName LevelEditorName("LevelEditor");
+
+	FLevelEditorModule* LevelEditorModule = FModuleManager::GetModulePtr<FLevelEditorModule>(LevelEditorName);
+
+	if (!LevelEditorModule)
+	{
+		return nullptr;
+	}
+
+	TSharedPtr<ILevelEditor> LevelEditor = LevelEditorModule->GetFirstLevelEditor();
+
+	if (!LevelEditor.IsValid())
+	{
+		return nullptr;
+	}
+
+	for (const TSharedPtr<SLevelViewport>& LevelViewport : LevelEditor->GetViewports())
+	{
+		if (LevelViewport.IsValid() && &LevelViewport->GetAssetViewportClient() == ViewportClient)
 		{
-			ActiveLevelViewport->AddOverlayWidget(Canvas);
+			return LevelViewport;
 		}
 	}
-	// */
 
-	/*
-	FWidgetPath Path;
-	FSlateApplication::Get().GeneratePathToWidgetUnchecked(Canvas, Path);
-	UE_LOG(LogEpith, Display, TEXT("Path to canvas: %s"), *Path.ToString());
-	*/
-	
-	/*
-	FVector2D ScreenPos = GetInitialScreenPos();
-	FSlateApplication::Get().PushMenu(
-		FSlateApplication::Get().GetUserFocusedWidget(0).ToSharedRef(),
-		Path,
-		MasterPane_Int.ToSharedRef(),
-		FDeprecateSlateVector2D(ScreenPos.X, ScreenPos.Y),
-		FPopupTransitionEffect(FPopupTransitionEffect::TypeInPopup),
-		true);
-	*/
-	
-	return Panels > 0;
+	return nullptr;
 }
 
-FVector2D UEpithEditorWorldExtension::GetInitialScreenPos()
+TArray<UEpithPanelDefinition*> UEpithEditorWorldExtension::GetPanelDefinitions()
 {
-	return {200, 100};
-}
+	TArray<UEpithPanelDefinition*> PanelDefinitions;
 
-TArray<const UEpithPanelDefinition*> UEpithEditorWorldExtension::GetPanelDefinitions()
-{
-	TArray<const UEpithPanelDefinition*> PanelDefinitions;
-	
 	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-	
+
 	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
-	
+
 	FARFilter Filter;
-	Filter.ClassPaths.Add(FTopLevelAssetPath(UEpithPanelDefinition::StaticClass()->GetClassPathName()));
+	Filter.ClassPaths.Add(UEpithPanelDefinition::StaticClass()->GetClassPathName());
 	Filter.bRecursiveClasses = true;
-	
+
 	TArray<FAssetData> OutAssets;
 	AssetRegistry.GetAssets(Filter, OutAssets);
-	
-	// We anticipate that most projects will have more panel definitions than objects on an actor (this will probably usually be false, but it's a better assumption for larger cases)
-	// Iterate the "large" panel definitions array. For each element, try to match it with one of the target objects. 
-	
+
 	for (const FAssetData& AssetData : OutAssets)
 	{
-		const UEpithPanelDefinition* PanelDefinition = Cast<const UEpithPanelDefinition>(AssetData.GetAsset());
-		
-		if (PanelDefinition)
+		if (UEpithPanelDefinition* PanelDefinition = Cast<UEpithPanelDefinition>(AssetData.GetAsset()))
 		{
 			PanelDefinitions.Add(PanelDefinition);
 		}
 	}
-	
-	// Make it so that the "child-most" classes are always on the left and discovered first when Objects are trying to match to these
-	PanelDefinitions.Sort( [] (const UEpithPanelDefinition& Left, const UEpithPanelDefinition& Right)
-	{
-		return Left.IsA(Right.GetClass());
-	});
-	
+
 	return PanelDefinitions;
 }
 
@@ -222,12 +232,11 @@ TArray<UObject*> UEpithEditorWorldExtension::GetAllObjects(UObject* Target)
 	if (!Target)
 	{
 		return Objects;
-	}		
+	}
 
 	GetObjectsWithOuter(Target, Objects);
-	
+
 	Objects.Insert(Target, 0);
 
 	return Objects;
 }
-

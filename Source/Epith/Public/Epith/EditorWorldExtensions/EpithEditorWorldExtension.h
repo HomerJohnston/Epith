@@ -1,42 +1,44 @@
 ﻿#pragma once
 
 #include "EditorWorldExtension.h"
-#include "StructUtils/InstancedStruct.h"
 
 #include "EpithEditorWorldExtension.generated.h"
 
-struct FEpithWindowElement;
+class IAssetViewport;
 class UEpithPanelDefinition;
 
-struct FEpithObjectWindowRootMatch
+struct FEpithObjectPanelMatch
 {
-	FEpithObjectWindowRootMatch(UObject* InObject, const FEpithWindowElement* InWindowRoot)
-		: Object(InObject), WindowRoot(InWindowRoot)
+	FEpithObjectPanelMatch(UObject* InObject, UEpithPanelDefinition* InPanelDefinition)
+		: Object(InObject), PanelDefinition(InPanelDefinition)
 	{
 	}
-	
+
 	UObject* Object;
-	const FEpithWindowElement* WindowRoot;
+	UEpithPanelDefinition* PanelDefinition;
 };
 
 UCLASS()
 class UEpithEditorWorldExtension : public UEditorWorldExtension
 {
 	GENERATED_BODY()
-	
+
 public:
 	void Init() override;
-	
+
 	bool InputKey(FEditorViewportClient* InViewportClient, FViewport* Viewport, FKey Key, EInputEvent Event) override;
-	
+
 public:
-	static TArray<FEpithObjectWindowRootMatch> GetPanelRoots(const TArray<UObject*>& Objects, const TArray<const UEpithPanelDefinition*>& PanelDefinitions);
-	
-	static bool TryShowPanel(UObject* Target);
-	
-	static FVector2D GetInitialScreenPos();
-	
-	static TArray<const UEpithPanelDefinition*> GetPanelDefinitions();
-	
+	/** For each object, finds the panel definition with the most-derived TargetClass that the object's class is a child of. Objects with no match are skipped. */
+	static TArray<FEpithObjectPanelMatch> FindPanelMatches(const TArray<UObject*>& Objects, const TArray<UEpithPanelDefinition*>& PanelDefinitions);
+
+	/** Builds and shows a panel for Target (and its subobjects) as an overlay on the given viewport. Returns false if nothing was shown. */
+	static bool TryShowPanel(UObject* Target, TSharedPtr<IAssetViewport> Viewport);
+
+	/** Finds the level editor viewport that is driven by the given viewport client. Returns null if the client doesn't belong to a level viewport. */
+	static TSharedPtr<IAssetViewport> FindLevelViewport(const FEditorViewportClient* ViewportClient);
+
+	static TArray<UEpithPanelDefinition*> GetPanelDefinitions();
+
 	static TArray<UObject*> GetAllObjects(UObject* Target);
 };

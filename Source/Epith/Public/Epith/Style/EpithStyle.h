@@ -61,7 +61,11 @@ public:
 
     static FName GetStyleSetName();
 
+    /** Creates and registers the style set. Called once from FEpithModule::StartupModule. Safe to call more than once. */
     static void Initialize();
+
+    /** Unregisters and destroys the style set. Called from FEpithModule::ShutdownModule. */
+    static void Shutdown();
 
     static void ReloadTextures();
 	

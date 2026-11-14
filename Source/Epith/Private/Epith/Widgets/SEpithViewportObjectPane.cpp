@@ -1,50 +1,112 @@
 ﻿#include "Epith/Widgets/SEpithViewportObjectPane.h"
 
 #include "Epith/EpithLog.h"
+#include "Epith/EpithPanelDefinition.h"
 #include "Epith/Style/EpithColor.h"
 #include "Epith/Style/EpithStyle.h"
 #include "Epith/Widgets/EpithWindowElement.h"
 #include "Epith/Widgets/SEpithViewportObjectPaneHeader.h"
 #include "Styling/SlateIconFinder.h"
 
+#define LOCTEXT_NAMESPACE "Epith"
+
 void SEpithViewportObjectPane::Construct(const FArguments& InArgs)
 {
-	if (!InArgs._Root || !InArgs._Target)
+	if (!InArgs._PanelDefinition || !InArgs._Target)
 	{
 		return;
 	}
-	
-	Root = InArgs._Root;
+
+	PanelDefinition.Reset(InArgs._PanelDefinition);
 	Target = InArgs._Target;
-	
+
 	PropertyData = MakeShared<FEpithPropertyDataContainer>(Target.Get());
-	
+
 	FCoreUObjectDelegates::OnObjectsReplaced.AddSP(this, &SEpithViewportObjectPane::OnObjectsReinstanced);
-	
+	FCoreUObjectDelegates::OnObjectPropertyChanged.AddSP(this, &SEpithViewportObjectPane::OnObjectPropertyChanged);
+
 	Build();
+}
+
+SEpithViewportObjectPane::~SEpithViewportObjectPane()
+{
+	FCoreUObjectDelegates::OnObjectsReplaced.RemoveAll(this);
+	FCoreUObjectDelegates::OnObjectPropertyChanged.RemoveAll(this);
 }
 
 void SEpithViewportObjectPane::OnObjectsReinstanced(const TMap<UObject*, UObject*>& ReplacementMap)
 {
-	UObject* const* NewTarget = ReplacementMap.Find(Target.Get(true));
-	
-	if (NewTarget)
+	bool bNeedsRebuild = false;
+
+	// The panel definition itself can be replaced (e.g. its Blueprint class was recompiled, or the package was reloaded)
+	if (UObject* const* NewDefinition = ReplacementMap.Find(PanelDefinition.Get()))
+	{
+		PanelDefinition.Reset(Cast<UEpithPanelDefinition>(*NewDefinition));
+		bNeedsRebuild = true;
+	}
+
+	if (UObject* const* NewTarget = ReplacementMap.Find(Target.Get(true)))
 	{
 		Target = *NewTarget;
-		//PropertyData->Target = *NewTarget;
 		PropertyData->OnObjectsReinstanced(ReplacementMap);
-		//PropertyData->RefreshPropertyHandles();
+		bNeedsRebuild = true;
+	}
+
+	if (bNeedsRebuild)
+	{
+		Build();
+	}
+}
+
+void SEpithViewportObjectPane::OnObjectPropertyChanged(UObject* Object, FPropertyChangedEvent& PropertyChangedEvent)
+{
+	// Only rebuild when the layout changes. Rebuilding on changes to the target would tear down the widget being edited.
+	if (Object && Object == PanelDefinition.Get())
+	{
 		Build();
 	}
 }
 
 void SEpithViewportObjectPane::Build()
 {
+	TSharedPtr<SWidget> Content;
+
 	if (!Target.IsValid())
 	{
-		checkNoEntry();
-		return;
+		Content = SNew(STextBlock).Text(LOCTEXT("ObjectPane_TargetGone", "This object no longer exists."));
 	}
+	else if (!PanelDefinition.IsValid() || !PanelDefinition->GetRoot())
+	{
+		Content = SNew(STextBlock).Text(LOCTEXT("ObjectPane_NoLayout", "This panel definition has no layout."));
+	}
+	else
+	{
+		Content = PanelDefinition->GetRoot()->Get<FEpithWindowElement>().Draw(PropertyData);
+
+		if (!Content.IsValid())
+		{
+			Content = SNew(STextBlock).Text(LOCTEXT("ObjectPane_EmptyLayout", "This panel's layout is empty."));
+		}
+	}
+
+	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
+
+	if (Target.IsValid())
+	{
+		Box->AddSlot()
+		.AutoHeight()
+		.Padding(12, 12, 12, 8)
+		[
+			SNew(SEpithViewportObjectPaneHeader)
+			.Target(Target.Get())
+		];
+	}
+
+	Box->AddSlot()
+	.AutoHeight()
+	[
+		Content.ToSharedRef()
+	];
 
 	ChildSlot
 	[
@@ -56,20 +118,10 @@ void SEpithViewportObjectPane::Build()
 			SNew(SBox)
 			.MinDesiredWidth(180)
 			[
-				SNew(SVerticalBox)
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				.Padding(12, 12, 12, 8)
-				[
-					SNew(SEpithViewportObjectPaneHeader)
-					.Target(Target.Get())
-				]
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				[
-					Root->Draw(PropertyData).ToSharedRef()
-				]
+				Box
 			]
 		]
 	];
 }
+
+#undef LOCTEXT_NAMESPACE

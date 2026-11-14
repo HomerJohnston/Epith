@@ -3,6 +3,7 @@
 #include "Widgets/Layout/SConstraintCanvas.h"
 
 class SConstraintCanvas;
+class IAssetViewport;
 
 class SEpithViewportMasterPane : public SCompoundWidget
 {
@@ -11,6 +12,9 @@ class SEpithViewportMasterPane : public SCompoundWidget
 		{}
 
 		SLATE_ARGUMENT(TSharedPtr<SWidget>, Canvas)
+
+		/** The viewport this pane's canvas was added to as an overlay. Used to remove it again on Close. */
+		SLATE_ARGUMENT(TSharedPtr<IAssetViewport>, Viewport)
 
 		SLATE_ARGUMENT(FVector2D, StartLocation)
 		
@@ -21,6 +25,8 @@ class SEpithViewportMasterPane : public SCompoundWidget
 	void Construct(const FArguments& InArgs);
 	
 	TWeakPtr<SWidget> Canvas;
+	
+	TWeakPtr<IAssetViewport> Viewport;
 	
 	FReply StartDragging(FVector2D InTabGrabScreenSpaceOffset, const FPointerEvent& MouseEvent);
 	

@@ -10,7 +10,8 @@ TSharedPtr<SWidget> FEpithWindowElement_FoldoutGroup::Draw(TSharedPtr<FEpithProp
 	{
 		ElementWidget = Element.Get<FEpithWindowElement>().Draw(InPropertyData);
 	}
-	else
+	
+	if (!ElementWidget.IsValid())
 	{
 		ElementWidget = SNew(STextBlock).Text(INVTEXT("No element set!"));
 	}

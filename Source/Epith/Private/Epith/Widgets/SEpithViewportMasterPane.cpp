@@ -15,6 +15,7 @@
 void SEpithViewportMasterPane::Construct(const FArguments& InArgs)
 {
 	Canvas = InArgs._Canvas;
+	Viewport = InArgs._Viewport;
 	CurrentPanelLocation = InArgs._StartLocation;
 	
 	check(Canvas.IsValid());
@@ -136,15 +137,12 @@ void SEpithViewportMasterPane::Tick(const FGeometry& AllottedGeometry, const dou
 
 void SEpithViewportMasterPane::Close()
 {
-	static const FName LevelEditorName("LevelEditor");
-	if (FModuleManager::Get().IsModuleLoaded(LevelEditorName))
+	TSharedPtr<IAssetViewport> PinnedViewport = Viewport.Pin();
+	TSharedPtr<SWidget> PinnedCanvas = Canvas.Pin();
+	
+	if (PinnedViewport.IsValid() && PinnedCanvas.IsValid())
 	{
-		FLevelEditorModule& LevelEditorModule = FModuleManager::GetModuleChecked<FLevelEditorModule>(LevelEditorName);
-		TSharedPtr<IAssetViewport> ActiveLevelViewport = LevelEditorModule.GetFirstActiveViewport();
-		if (ActiveLevelViewport.IsValid())
-		{
-			ActiveLevelViewport->RemoveOverlayWidget(Canvas.Pin().ToSharedRef());
-		}
+		PinnedViewport->RemoveOverlayWidget(PinnedCanvas.ToSharedRef());
 	}
 }
 

@@ -23,8 +23,20 @@ TSharedPtr<SWidget> FEpithWindowElement_TabbedGroup::Draw(TSharedPtr<FEpithPrope
 			TabText = FText::Format(INVTEXT("Tab {0}"), i);
 		}
 		
+		TSharedPtr<SWidget> PaneWidget = Slots[i].Element.Get<FEpithWindowElement>().Draw(InPropertyData);
+		
+		if (!PaneWidget.IsValid())
+		{
+			continue;
+		}
+		
 		Tabs.Add(TabText);
-		Panes.Add(Slots[i].Element.Get<FEpithWindowElement>().Draw(InPropertyData).ToSharedRef());
+		Panes.Add(PaneWidget.ToSharedRef());
+	}
+	
+	if (Panes.Num() == 0)
+	{
+		return nullptr;
 	}
 	
 	return SNew(SEpithTabbedPane)

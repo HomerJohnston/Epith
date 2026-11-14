@@ -95,15 +95,12 @@ FEpithFonts EpithFonts;
 
 ISlateStyle& FEpithStyle::Get()
 {
-	static bool bInitialized = false;
-	
-	if (!bInitialized)
+	// The style is created in FEpithModule::StartupModule. This is only a fallback; creating it lazily mid-frame is what we want to avoid.
+	if (!StyleInstance.IsValid())
 	{
 		Initialize();
-		bInitialized = true;
 	}
 	
-	TSharedPtr<FSlateStyleSet> FUFKYOU = StyleInstance;
 	return *StyleInstance;
 }
 
@@ -119,16 +116,6 @@ FEpithStyle::FEpithStyle()
 
 FEpithStyle::~FEpithStyle()
 {
-	Textures.Empty();
-	
-#if WITH_LIVE_CODING
-	if (ILiveCodingModule* LiveCoding = FModuleManager::GetModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME))
-	{
-		LiveCoding->GetOnPatchCompleteDelegate().Remove(OnPatchCompleteHandle);
-	}
-#endif
-	
-	FSlateStyleRegistry::UnRegisterSlateStyle(*StyleInstance);
 }
 
 FName FEpithStyle::GetStyleSetName()
@@ -139,11 +126,25 @@ FName FEpithStyle::GetStyleSetName()
 
 void FEpithStyle::Initialize()
 {
-	if (!StyleInstance.IsValid())
+	if (StyleInstance.IsValid())
 	{
-		StyleInstance = Create();
-		FSlateStyleRegistry::RegisterSlateStyle(*StyleInstance);
+		return;
 	}
+	
+	// No Slate in commandlets (cooking etc.), and FAppStyle may not exist yet.
+	if (!FSlateApplication::IsInitialized())
+	{
+		return;
+	}
+	
+	StyleInstance = Create();
+	
+	// Brushes are registered before the style set is, and their textures load lazily on first draw.
+	// Do NOT call ReloadTextureResources() here: it destroys every Slate texture in the editor, and if this runs mid-frame
+	// the render thread crashes drawing batches that still point at the destroyed textures.
+	SetupStyles();
+	
+	FSlateStyleRegistry::RegisterSlateStyle(*StyleInstance);
 
 #if WITH_LIVE_CODING
 	if (ILiveCodingModule* LiveCoding = FModuleManager::LoadModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME))
@@ -151,10 +152,25 @@ void FEpithStyle::Initialize()
 		OnPatchCompleteHandle = LiveCoding->GetOnPatchCompleteDelegate().AddStatic(&FEpithStyle::OnPatchComplete);
 	}
 #endif
-	
-	SetupStyles();
+}
 
-	ReloadTextures();
+void FEpithStyle::Shutdown()
+{
+#if WITH_LIVE_CODING
+	if (ILiveCodingModule* LiveCoding = FModuleManager::GetModulePtr<ILiveCodingModule>(LIVE_CODING_MODULE_NAME))
+	{
+		LiveCoding->GetOnPatchCompleteDelegate().Remove(OnPatchCompleteHandle);
+	}
+#endif
+	OnPatchCompleteHandle.Reset();
+	
+	if (StyleInstance.IsValid())
+	{
+		FSlateStyleRegistry::UnRegisterSlateStyle(*StyleInstance);
+		StyleInstance.Reset();
+	}
+	
+	Textures.Empty();
 }
 
 void FEpithStyle::ReloadTextures()
@@ -188,12 +204,6 @@ const ISlateStyle* FEpithStyle::GetParentStyle()
 
 void FEpithStyle::SetupStyles()
 {
-	if (!IsRunningCommandlet())
-	{
-		FSlateApplication::Get().GetRenderer()->ReloadTextureResources();
-	}
-	
-	
 	EPITH_REDEFINE_UE_BRUSH(FSlateImageBrush,			None,							FAppStyle,	"NoBorder",					FVector2f(16, 16), EpithColor::Transparent);
 
 	// ============================================================================================
@@ -341,9 +351,12 @@ void FEpithStyle::SetupStyles()
 
 void FEpithStyle::OnPatchComplete()
 {
-	FSlateStyleRegistry::UnRegisterSlateStyle(*StyleInstance);
-	Initialize();
-	FSlateStyleRegistry::RegisterSlateStyle(*StyleInstance);
+	// Live coding: re-run SetupStyles() on the existing style set so edits show up without restarting the editor.
+	// Don't destroy the style set here: open widgets hold raw pointers to its brushes.
+	if (StyleInstance.IsValid())
+	{
+		SetupStyles();
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

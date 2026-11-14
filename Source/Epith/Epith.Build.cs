@@ -47,7 +47,8 @@ public class Epith : ModuleRules
 				"AssetDefinition",
 				"EditorFramework",
 				"InputCore",
-				"PropertyEditor"
+				"PropertyEditor",
+				"LevelEditor",
 				// ... add private dependencies that you statically link with here ...	
 			}
 			);
