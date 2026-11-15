@@ -7,6 +7,7 @@
 #include "ScopedTransaction.h"
 #include "Engine/BlueprintGeneratedClass.h"
 #include "Epith/Misc/EpithPropertyDataContainer.h"
+#include "Epith/Widgets/EpithDrawContext.h"
 #include "Styling/AppStyle.h"
 #include "Styling/CoreStyle.h"
 #include "Styling/StyleColors.h"
@@ -208,7 +209,7 @@ namespace EpithPropertyRow
 			];
 	}
 
-	TSharedRef<SWidget> MakeChildRows(const TArray<TSharedRef<IDetailTreeNode>>& Children, const TSharedRef<FEpithPropertyDataContainer>& PropertyData, int32 Depth)
+	TSharedRef<SWidget> MakeChildRows(const TArray<TSharedRef<IDetailTreeNode>>& Children, const TSharedRef<FEpithPropertyDataContainer>& PropertyData, int32 Depth, const TSharedPtr<FEpithColumnLayout>& Columns)
 	{
 		TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
 
@@ -217,7 +218,7 @@ namespace EpithPropertyRow
 			const FName ChildKey = GetNodeKey(Child, Child->CreatePropertyHandle());
 
 			TSharedRef<SWidget> ChildWidget = PropertyData->TryClaimChildPath(ChildKey)
-				? Make(Child, PropertyData, Depth)
+				? Make(Child, PropertyData, Depth, Columns)
 				: MakeWarning(FText::Format(LOCTEXT("PropertyRow_ChildDuplicate", "{0} is already shown in this panel"), FText::FromName(ChildKey)), Depth);
 
 			Box->AddSlot()
@@ -243,38 +244,45 @@ namespace EpithPropertyRow
 		TWeakPtr<SBox> Container;
 		FName Key;
 		int32 Depth = 0;
+		TSharedPtr<FEpithColumnLayout> Columns;
 		bool bBuilt = false;
 		TArray<TWeakPtr<IDetailTreeNode>> BuiltChildren;
-		
+
 		void Build()
 		{
 			TSharedPtr<IDetailTreeNode> PinnedNode = Node.Pin();
 			TSharedPtr<FEpithPropertyDataContainer> PinnedData = PropertyData.Pin();
 			TSharedPtr<SBox> PinnedContainer = Container.Pin();
-			
+
 			if (!PinnedNode.IsValid() || !PinnedData.IsValid() || !PinnedContainer.IsValid())
 			{
 				return;
 			}
-			
+
 			// Let go of the old child widgets and their claims before drawing the new ones
 			PinnedContainer->SetContent(SNullWidget::NullWidget);
 			PinnedData->ReleaseChildClaimsUnder(Key);
-			
+
 			TArray<TSharedRef<IDetailTreeNode>> Children;
 			GatherDrawableChildren(PinnedNode.ToSharedRef(), Children);
-			
+
 			BuiltChildren.Reset(Children.Num());
-			
+
 			for (const TSharedRef<IDetailTreeNode>& Child : Children)
 			{
 				BuiltChildren.Add(Child);
 			}
-			
-			PinnedContainer->SetContent(MakeChildRows(Children, PinnedData.ToSharedRef(), Depth + 1));
+
+			PinnedContainer->SetContent(MakeChildRows(Children, PinnedData.ToSharedRef(), Depth + 1, Columns));
 			bBuilt = true;
+			
+			// New child rows may be wider than the group's column; measure them now so the column doesn't jump a frame later
+			if (Columns.IsValid())
+			{
+				FEpithColumnLayout::MeasureNow(PinnedContainer.ToSharedRef());
+			}
 		}
-		
+
 		void BuildIfNeeded()
 		{
 			if (!bBuilt)
@@ -282,24 +290,24 @@ namespace EpithPropertyRow
 				Build();
 			}
 		}
-		
+
 		bool HaveChildrenChanged() const
 		{
 			TSharedPtr<IDetailTreeNode> PinnedNode = Node.Pin();
-			
+
 			if (!PinnedNode.IsValid())
 			{
 				return false;
 			}
-			
+
 			TArray<TSharedRef<IDetailTreeNode>> Children;
 			GatherDrawableChildren(PinnedNode.ToSharedRef(), Children);
-			
+
 			if (Children.Num() != BuiltChildren.Num())
 			{
 				return true;
 			}
-			
+
 			for (int32 i = 0; i < Children.Num(); ++i)
 			{
 				if (BuiltChildren[i].Pin() != Children[i])
@@ -307,12 +315,12 @@ namespace EpithPropertyRow
 					return true;
 				}
 			}
-			
+
 			return false;
 		}
 	};
-	
-	TSharedRef<SWidget> Make(TSharedRef<IDetailTreeNode> Node, TSharedRef<FEpithPropertyDataContainer> PropertyData, int32 Depth)
+
+	TSharedRef<SWidget> Make(TSharedRef<IDetailTreeNode> Node, TSharedRef<FEpithPropertyDataContainer> PropertyData, int32 Depth, TSharedPtr<FEpithColumnLayout> Columns)
 	{
 		FDetailTreeNode& DetailNode = AsDetailTreeNode(*Node);
 		TSharedPtr<IPropertyHandle> Handle = Node->CreatePropertyHandle();
@@ -320,7 +328,7 @@ namespace EpithPropertyRow
 
 		TArray<TSharedRef<IDetailTreeNode>> Children;
 		GatherDrawableChildren(Node, Children);
-		
+
 		// Arrays, sets and maps can gain children later (an empty array gets its first element), so they always get an expander
 		const FProperty* RowProperty = Handle.IsValid() && Handle->IsValidHandle() ? Handle->GetProperty() : nullptr;
 		const bool bIsContainerProperty = RowProperty && (RowProperty->IsA<FArrayProperty>() || RowProperty->IsA<FSetProperty>() || RowProperty->IsA<FMapProperty>());
@@ -332,18 +340,20 @@ namespace EpithPropertyRow
 			return SNew(SBox)
 				.Visibility(MakeNodeVisibility(Node))
 				[
-					WrapIfNotInstanceEditable(MakeChildRows(Children, PropertyData, Depth), Handle, *PropertyData)
+					WrapIfNotInstanceEditable(MakeChildRows(Children, PropertyData, Depth, Columns), Handle, *PropertyData)
 				];
 		}
 
 		FDetailWidgetRow Row;
 		const bool bHasRowContent = DetailNode.GenerateStandaloneWidget(Row) && Row.HasAnyContent();
 
-		TSharedRef<SHorizontalBox> RowBox = SNew(SHorizontalBox);
+		// Everything left of the value: indent, expander, edit-condition toggle, name. In a group this whole area gets the
+		// group's shared name-column width, so values line up even for nested (indented) rows, like the Details panel.
+		TSharedRef<SHorizontalBox> NameArea = SNew(SHorizontalBox);
 
 		if (Depth > 0)
 		{
-			RowBox->AddSlot()
+			NameArea->AddSlot()
 			.AutoWidth()
 			[
 				SNew(SSpacer)
@@ -353,30 +363,31 @@ namespace EpithPropertyRow
 
 		// Expander arrow for structs, arrays, maps, sets and customized children; a spacer keeps nested rows aligned
 		TSharedPtr<SBox> ChildContainer;
-		
+
 		if (bCanHaveChildren)
 		{
 			TWeakPtr<FEpithPropertyDataContainer> WeakPropertyData = PropertyData;
-			
+
 			ChildContainer = SNew(SBox)
 				.Visibility_Lambda([WeakPropertyData, Key]()
 				{
 					TSharedPtr<FEpithPropertyDataContainer> PinnedData = WeakPropertyData.Pin();
 					return PinnedData.IsValid() && PinnedData->IsExpanded(Key) ? EVisibility::Visible : EVisibility::Collapsed;
 				});
-			
+
 			TSharedRef<FChildListState> ChildList = MakeShared<FChildListState>();
 			ChildList->Node = Node;
 			ChildList->PropertyData = PropertyData;
 			ChildList->Container = ChildContainer;
 			ChildList->Key = Key;
 			ChildList->Depth = Depth;
-			
+			ChildList->Columns = Columns;
+
 			if (PropertyData->IsExpanded(Key))
 			{
 				ChildList->Build();
 			}
-			
+
 			// When the generator refreshes (e.g. an element was added to this array), redraw just this row's children if they changed.
 			// Bound to the child container's lifetime, so it unbinds itself when the row goes away.
 			PropertyData->OnRowsRefreshed.AddSPLambda(ChildContainer.Get(), [ChildList]()
@@ -386,8 +397,8 @@ namespace EpithPropertyRow
 					ChildList->Build();
 				}
 			});
-			
-			RowBox->AddSlot()
+
+			NameArea->AddSlot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
@@ -406,13 +417,13 @@ namespace EpithPropertyRow
 						{
 							const bool bNewExpanded = !PinnedData->IsExpanded(Key);
 							PinnedData->SetExpanded(Key, bNewExpanded);
-							
+
 							if (bNewExpanded)
 							{
 								ChildList->BuildIfNeeded();
 							}
 						}
-						
+
 						return FReply::Handled();
 					})
 					[
@@ -430,7 +441,7 @@ namespace EpithPropertyRow
 		}
 		else if (Depth > 0)
 		{
-			RowBox->AddSlot()
+			NameArea->AddSlot()
 			.AutoWidth()
 			[
 				SNew(SSpacer)
@@ -440,7 +451,7 @@ namespace EpithPropertyRow
 
 		if (Row.OnEditConditionValueChanged.IsBound())
 		{
-			RowBox->AddSlot()
+			NameArea->AddSlot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			.Padding(0, 0, 4, 0)
@@ -449,10 +460,12 @@ namespace EpithPropertyRow
 			];
 		}
 
+		TSharedPtr<SWidget> ValueWidget;
+
 		if (!bHasRowContent)
 		{
 			// Nothing to show for the row itself (rare); fall back to the property's name so its children still have a header
-			RowBox->AddSlot()
+			NameArea->AddSlot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
@@ -462,7 +475,7 @@ namespace EpithPropertyRow
 		}
 		else if (Row.HasColumns())
 		{
-			RowBox->AddSlot()
+			NameArea->AddSlot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			.Padding(0, 0, 8, 0)
@@ -470,11 +483,52 @@ namespace EpithPropertyRow
 				Row.NameWidget.Widget
 			];
 
+			ValueWidget = Row.ValueWidget.Widget;
+		}
+		else
+		{
+			// Rows that draw themselves as one piece (some customizations) keep their own layout
+			NameArea->AddSlot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				Row.WholeRowWidget.Widget
+			];
+		}
+
+		TSharedRef<SHorizontalBox> RowBox = SNew(SHorizontalBox);
+
+		if (Columns.IsValid() && ValueWidget.IsValid())
+		{
+			Columns->RegisterNameArea(NameArea);
+
 			RowBox->AddSlot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
-				Row.ValueWidget.Widget
+				SNew(SBox)
+				.Clipping(EWidgetClipping::ClipToBounds)
+				.WidthOverride_Lambda([Columns]()
+				{
+					return Columns->GetNameWidth();
+				})
+				[
+					NameArea
+				]
+			];
+
+			RowBox->AddSlot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			[
+				SNew(SBox)
+				.WidthOverride_Lambda([Columns]()
+				{
+					return Columns->GetValueWidth();
+				})
+				[
+					ValueWidget.ToSharedRef()
+				]
 			];
 		}
 		else
@@ -483,8 +537,18 @@ namespace EpithPropertyRow
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
-				Row.WholeRowWidget.Widget
+				NameArea
 			];
+
+			if (ValueWidget.IsValid())
+			{
+				RowBox->AddSlot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				[
+					ValueWidget.ToSharedRef()
+				];
+			}
 		}
 
 		if (Handle.IsValid() && Handle->IsValidHandle() && Handle->GetProperty())

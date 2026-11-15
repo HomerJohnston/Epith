@@ -103,6 +103,9 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target, TSharedPtr<IAsset
 		return false;
 	}
 	
+	// Only one panel at a time. Closing first also lets the new panel open where the old one was (LastPanelLocation).
+	SEpithViewportMasterPane::CloseAll();
+	
 	TSharedRef<SConstraintCanvas> Canvas = SNew(SConstraintCanvas);
 	
 	TSharedRef<SEpithViewportMasterPane> MasterPane = SNew(SEpithViewportMasterPane)

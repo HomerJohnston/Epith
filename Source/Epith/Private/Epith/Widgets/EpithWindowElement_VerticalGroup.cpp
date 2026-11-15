@@ -11,23 +11,26 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 	// In the designer, slots are edited in place (see EpithDraw::DrawSlot)
 	TArray<FEpithWindowElement_VerticalGroup_Slot>& MutableSlots = const_cast<TArray<FEpithWindowElement_VerticalGroup_Slot>&>(Slots);
 	
+	// This group's property rows line up with each other
+	const FEpithDrawContext ChildContext = Context.WithColumns(Columns);
+
 	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
-	
+
 	int32 SlotsNum = Slots.Num();
-	
+
 	for (int32 i = 0; i < Slots.Num(); ++i)
 	{
 		const FEpithWindowElement_VerticalGroup_Slot& Slot = Slots[i];
-		
+
 		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i) : FEpithSlotActions();
-		
-		TSharedPtr<SWidget> Widget = EpithDraw::DrawSlot(Slot.Child, Context, Actions);
-		
+
+		TSharedPtr<SWidget> Widget = EpithDraw::DrawSlot(Slot.Child, ChildContext, Actions);
+
 		if (!Widget.IsValid())
 		{
 			continue;
 		}
-	
+
 		Box->AddSlot()
 		.AutoHeight()
 		.Padding(4, 1, 4, i == SlotsNum - 1 ? 1 : 0)
@@ -41,7 +44,7 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 			]
 		];
 	}
-	
+
 	if (Context.IsDesigning())
 	{
 		Box->AddSlot()
@@ -54,7 +57,7 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 			})
 		];
 	}
-	
+
 	return Box;
 }
 

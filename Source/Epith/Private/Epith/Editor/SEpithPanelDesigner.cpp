@@ -401,6 +401,9 @@ void SEpithPanelDesigner::Redraw()
 				]
 			]
 		]);
+	
+	// Line up property columns on the first frame (no one-frame flicker)
+	FEpithColumnLayout::MeasureNow(PreviewArea.ToSharedRef());
 }
 
 void SEpithPanelDesigner::Edit(const FText& Description, TFunction<void()> Mutation)

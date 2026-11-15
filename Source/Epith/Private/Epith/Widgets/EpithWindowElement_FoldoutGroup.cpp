@@ -5,13 +5,13 @@
 
 TSharedPtr<SWidget> FEpithWindowElement_FoldoutGroup::Draw(const FEpithDrawContext& Context) const
 {
-	TSharedPtr<SWidget> ElementWidget = EpithDraw::DrawSlot(Element, Context);
-	
+	TSharedPtr<SWidget> ElementWidget = EpithDraw::DrawSlot(Element, Context.WithColumns(Columns));
+
 	if (!ElementWidget.IsValid())
 	{
 		ElementWidget = SNew(STextBlock).Text(INVTEXT("No element set!"));
 	}
-	
+
 	TSharedRef<SExpandableArea> ExpandableArea = SNew(SExpandableArea)
 	.AreaTitle(FText::FromString(FoldoutTitle))
 	.AllowAnimatedTransition(false)
@@ -21,6 +21,6 @@ TSharedPtr<SWidget> FEpithWindowElement_FoldoutGroup::Draw(const FEpithDrawConte
 	[
 		ElementWidget.ToSharedRef()
 	];
-	
+
 	return ExpandableArea;
 }

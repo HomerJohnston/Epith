@@ -15,7 +15,7 @@ namespace EpithPropertyElement
 			.Text(Message)
 			.ColorAndOpacity(FSlateColor(EStyleColor::Warning));
 	}
-	
+
 	/** The row for PropertyPath, or a warning. Null if no path is set. */
 	TSharedPtr<SWidget> MakeRow(FName PropertyPath, const FEpithDrawContext& Context)
 	{
@@ -23,9 +23,9 @@ namespace EpithPropertyElement
 		{
 			return nullptr;
 		}
-		
+
 		TSharedPtr<IDetailTreeNode> TreeNode = Context.PropertyData->FindTreeNode(PropertyPath);
-		
+
 		if (!TreeNode.IsValid())
 		{
 			if (Context.IsDesigning())
@@ -36,10 +36,10 @@ namespace EpithPropertyElement
 					.Text(FText::Format(LOCTEXT("PropertyElement_NoPreview", "{0} (no preview)"), FText::FromName(PropertyPath)))
 					.ColorAndOpacity(FSlateColor::UseSubduedForeground());
 			}
-			
+
 			return MakeWarning(FText::Format(LOCTEXT("PropertyElement_Missing", "Missing property: {0}"), FText::FromName(PropertyPath)));
 		}
-		
+
 		// A property row's widgets can only live in one place. The details system builds them once per row and hands out the same
 		// instances every time, and type customizations (e.g. the color picker) keep pointers to them. So each row may be drawn once
 		// per container. (The original code called IDetailPropertyRow::GetDefaultWidgets as well, which re-runs CustomizeHeader and
@@ -48,43 +48,34 @@ namespace EpithPropertyElement
 		{
 			return MakeWarning(FText::Format(LOCTEXT("PropertyElement_Duplicate", "{0} is already shown in this panel"), FText::FromName(PropertyPath)));
 		}
-		
-		return EpithPropertyRow::Make(TreeNode.ToSharedRef(), Context.PropertyData.ToSharedRef());
+
+		return EpithPropertyRow::Make(TreeNode.ToSharedRef(), Context.PropertyData.ToSharedRef(), 0, Context.Columns);
 	}
 }
 
 TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(const FEpithDrawContext& Context) const
 {
 	const FName PropertyPath = PropertySelector.GetPropertyPath();
-	
+
 	TSharedPtr<SWidget> Row = EpithPropertyElement::MakeRow(PropertyPath, Context);
-	
+
 	if (!Context.IsDesigning())
 	{
 		return Row;
 	}
-	
-	// Designer: a property picker, then a preview of the row. The preview is for looks only: it shows the class defaults
-	// and doesn't take clicks (so they go to the designer instead of editing the defaults).
+
+	// Designer: a preview of the row, then a property picker. The row comes first so names and values still line up with
+	// the group's other rows. The preview is for looks only: it shows the class defaults and doesn't take clicks.
 	FEpithPropertySelector* MutableSelector = const_cast<FEpithPropertySelector*>(&PropertySelector);
 	
-	TSharedRef<SHorizontalBox> Box = SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.VAlign(VAlign_Center)
-		.Padding(0, 0, 8, 0)
-		[
-			Context.Designer->MakePropertyPicker(PropertyPath, [MutableSelector](FName NewPath)
-			{
-				MutableSelector->SetPropertyPath(NewPath);
-			})
-		];
+	TSharedRef<SHorizontalBox> Box = SNew(SHorizontalBox);
 	
 	if (Row.IsValid())
 	{
 		Box->AddSlot()
 		.AutoWidth()
 		.VAlign(VAlign_Center)
+		.Padding(0, 0, 8, 0)
 		[
 			SNew(SBox)
 			.Visibility(EVisibility::HitTestInvisible)
@@ -93,6 +84,16 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(const FEpithDrawContext& 
 			]
 		];
 	}
+	
+	Box->AddSlot()
+	.AutoWidth()
+	.VAlign(VAlign_Center)
+	[
+		Context.Designer->MakePropertyPicker(PropertyPath, [MutableSelector](FName NewPath)
+		{
+			MutableSelector->SetPropertyPath(NewPath);
+		})
+	];
 	
 	return Box;
 }

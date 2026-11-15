@@ -5,6 +5,7 @@
 class IDetailTreeNode;
 class SWidget;
 struct FEpithPropertyDataContainer;
+class FEpithColumnLayout;
 
 /**
  * Draws property rows the way the Details panel does: edit-condition toggle, name, value, reset-to-default button,
@@ -13,5 +14,6 @@ struct FEpithPropertyDataContainer;
  */
 namespace EpithPropertyRow
 {
-	TSharedRef<SWidget> Make(TSharedRef<IDetailTreeNode> Node, TSharedRef<FEpithPropertyDataContainer> PropertyData, int32 Depth = 0);
+	/** @param Columns The group's shared column widths, so rows in the same group line up. Null = no alignment. */
+	TSharedRef<SWidget> Make(TSharedRef<IDetailTreeNode> Node, TSharedRef<FEpithPropertyDataContainer> PropertyData, int32 Depth = 0, TSharedPtr<FEpithColumnLayout> Columns = nullptr);
 }
