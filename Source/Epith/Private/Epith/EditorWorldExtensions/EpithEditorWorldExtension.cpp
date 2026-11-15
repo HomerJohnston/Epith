@@ -6,6 +6,8 @@
 #include "AssetRegistry/AssetRegistryModule.h"
 #include "Epith/EpithLog.h"
 #include "Epith/EpithPanelDefinition.h"
+#include "Epith/Editor/EpithPanelDefinitionCache.h"
+#include "Epith/Settings/EpithEditorSettings.h"
 #include "Epith/Widgets/SEpithViewportMasterPane.h"
 #include "Epith/Widgets/SEpithViewportObjectPane.h"
 #include "Subsystems/EditorActorSubsystem.h"
@@ -18,7 +20,7 @@ void UEpithEditorWorldExtension::Init()
 
 bool UEpithEditorWorldExtension::InputKey(FEditorViewportClient* InViewportClient, FViewport* Viewport, FKey Key, EInputEvent Event)
 {
-	if (Key != EKeys::LeftMouseButton || Event != IE_DoubleClick)
+	if (Key != EKeys::LeftMouseButton || Event != IE_DoubleClick || !UEpithEditorSettings::Get()->IsEpithEnabled())
 	{
 		return false;
 	}
@@ -102,24 +104,24 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target, TSharedPtr<IAsset
 	{
 		return false;
 	}
-	
+
 	// Only one panel at a time. Closing first also lets the new panel open where the old one was (LastPanelLocation).
 	SEpithViewportMasterPane::CloseAll();
-	
+
 	TSharedRef<SConstraintCanvas> Canvas = SNew(SConstraintCanvas);
-	
+
 	TSharedRef<SEpithViewportMasterPane> MasterPane = SNew(SEpithViewportMasterPane)
 		.Canvas(Canvas)
 		.Viewport(Viewport)
 		.Target(Target);
-	
+
 	if (!MasterPane->HasPanes())
 	{
 		return false;
 	}
-	
+
 	TWeakPtr<SEpithViewportMasterPane> WeakMasterPane = MasterPane;
-	
+
 	Canvas->AddSlot()
 	.Alignment(FVector2D(0, 0))
 	.Anchors(FAnchors(0, 0))
@@ -132,31 +134,31 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target, TSharedPtr<IAsset
 	[
 		MasterPane
 	];
-	
+
 	Viewport->AddOverlayWidget(Canvas);
-	
+
 	return true;
 }
 
 TArray<TSharedRef<SEpithViewportObjectPane>> UEpithEditorWorldExtension::CreateObjectPanes(UObject* Target)
 {
 	TArray<TSharedRef<SEpithViewportObjectPane>> Panes;
-	
+
 	if (!IsValid(Target))
 	{
 		return Panes;
 	}
-	
+
 	TArray<UEpithPanelDefinition*> PanelDefinitions = GetPanelDefinitions();
-	
+
 	if (PanelDefinitions.Num() == 0)
 	{
 		return Panes;
 	}
-	
+
 	TArray<UObject*> Objects = GetAllObjects(Target);
 	TArray<FEpithObjectPanelMatch> Matches = FindPanelMatches(Objects, PanelDefinitions);
-	
+
 	// Keep the target itself first, then sort the rest by name.
 	Matches.StableSort([Target](const FEpithObjectPanelMatch& First, const FEpithObjectPanelMatch& Second)
 	{
@@ -164,17 +166,17 @@ TArray<TSharedRef<SEpithViewportObjectPane>> UEpithEditorWorldExtension::CreateO
 		{
 			return First.Object == Target;
 		}
-		
+
 		return First.Object->GetName() < Second.Object->GetName();
 	});
-	
+
 	for (const FEpithObjectPanelMatch& Match : Matches)
 	{
 		Panes.Add(SNew(SEpithViewportObjectPane)
 			.Target(Match.Object)
 			.PanelDefinition(Match.PanelDefinition));
 	}
-	
+
 	return Panes;
 }
 
@@ -214,28 +216,8 @@ TSharedPtr<IAssetViewport> UEpithEditorWorldExtension::FindLevelViewport(const F
 
 TArray<UEpithPanelDefinition*> UEpithEditorWorldExtension::GetPanelDefinitions()
 {
-	TArray<UEpithPanelDefinition*> PanelDefinitions;
-
-	FAssetRegistryModule& AssetRegistryModule = FModuleManager::LoadModuleChecked<FAssetRegistryModule>("AssetRegistry");
-
-	IAssetRegistry& AssetRegistry = AssetRegistryModule.Get();
-
-	FARFilter Filter;
-	Filter.ClassPaths.Add(UEpithPanelDefinition::StaticClass()->GetClassPathName());
-	Filter.bRecursiveClasses = true;
-
-	TArray<FAssetData> OutAssets;
-	AssetRegistry.GetAssets(Filter, OutAssets);
-
-	for (const FAssetData& AssetData : OutAssets)
-	{
-		if (UEpithPanelDefinition* PanelDefinition = Cast<UEpithPanelDefinition>(AssetData.GetAsset()))
-		{
-			PanelDefinitions.Add(PanelDefinition);
-		}
-	}
-
-	return PanelDefinitions;
+	// Cached; refreshed only when panel definition assets are added, removed or renamed
+	return EpithPanelDefinitionCache::GetDefinitions();
 }
 
 TArray<UObject*> UEpithEditorWorldExtension::GetAllObjects(UObject* Target)

@@ -81,12 +81,12 @@ SEpithViewportMasterPane::~SEpithViewportMasterPane()
 FText SEpithViewportMasterPane::GetTitle() const
 {
 	const UObject* PinnedTarget = Target.Get();
-	
+
 	if (const AActor* TargetActor = Cast<AActor>(PinnedTarget))
 	{
 		return FText::FromString(TargetActor->GetActorLabel());
 	}
-	
+
 	return PinnedTarget ? FText::FromName(PinnedTarget->GetFName()) : FText::GetEmpty();
 }
 
@@ -205,6 +205,21 @@ void SEpithViewportMasterPane::CloseAll()
 	{
 		Pane->Close();
 	}
+}
+
+bool SEpithViewportMasterPane::IsOpenFor(const UObject* Object)
+{
+	for (const TWeakPtr<SEpithViewportMasterPane>& Pane : OpenPanes)
+	{
+		TSharedPtr<SEpithViewportMasterPane> Pinned = Pane.Pin();
+		
+		if (Pinned.IsValid() && !Pinned->bClosed && Pinned->Target.Get() == Object)
+		{
+			return true;
+		}
+	}
+	
+	return false;
 }
 
 void SEpithViewportMasterPane::BeginDrag(const FVector2D& ScreenPosition)
