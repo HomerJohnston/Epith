@@ -12,7 +12,7 @@ TSharedPtr<SWidget> FEpithWindowElement_TabbedGroup::Draw(const FEpithDrawContex
 
 	// All tabs share one column layout, so switching tabs doesn't make the columns jump
 	const FEpithDrawContext ChildContext = Context.WithColumns(Columns);
-	
+
 	TArray<FText> Tabs;
 	TArray<TSharedRef<SWidget>> Panes;
 
@@ -67,7 +67,7 @@ TSharedPtr<SWidget> FEpithWindowElement_TabbedGroup::Draw(const FEpithDrawContex
 	.AutoHeight()
 	.Padding(4, 2)
 	[
-		Context.Designer->MakeAddButton(LOCTEXT("TabbedGroup_AddTab", "Add Tab"), [SlotsPtr = &MutableSlots]()
+		Context.Designer->MakeAddButton(LOCTEXT("TabbedGroup_AddTab", "+ to Tabbed Group"), [SlotsPtr = &MutableSlots]()
 		{
 			FEpithWindowElement_TabbedGroup_Slot& NewSlot = SlotsPtr->AddDefaulted_GetRef();
 			NewSlot.TabName = FString::Printf(TEXT("Tab %d"), SlotsPtr->Num());

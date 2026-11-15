@@ -9,7 +9,7 @@
 #include "Epith/Misc/EpithPropertyDataContainer.h"
 #include "Epith/Style/EpithStyle.h"
 #include "Epith/Widgets/EpithDrawContext.h"
-#include "Epith/Widgets/EpithWindowElement_FoldoutGroup.h"
+#include "Epith/Widgets/EpithWindowElement_Foldout.h"
 #include "Epith/Widgets/EpithWindowElement_HorizontalGroup.h"
 #include "Epith/Widgets/EpithWindowElement_Property.h"
 #include "Epith/Widgets/EpithWindowElement_TabbedGroup.h"
@@ -44,7 +44,7 @@ namespace EpithDesigner
 	{
 		static const TArray<const UScriptStruct*> Types =
 		{
-			FEpithWindowElement_FoldoutGroup::StaticStruct(),
+			FEpithWindowElement_Foldout::StaticStruct(),
 			FEpithWindowElement_VerticalGroup::StaticStruct(),
 			FEpithWindowElement_HorizontalGroup::StaticStruct(),
 			FEpithWindowElement_TabbedGroup::StaticStruct(),
@@ -59,7 +59,7 @@ namespace EpithDesigner
 	{
 		static const TArray<const UScriptStruct*> Types =
 		{
-			FEpithWindowElement_FoldoutGroup::StaticStruct(),
+			FEpithWindowElement_Foldout::StaticStruct(),
 			FEpithWindowElement_VerticalGroup::StaticStruct(),
 			FEpithWindowElement_HorizontalGroup::StaticStruct(),
 			FEpithWindowElement_TabbedGroup::StaticStruct(),
@@ -68,26 +68,33 @@ namespace EpithDesigner
 		return Types;
 	}
 
-	/** Turns a slot into a new element of Type, with a first empty child slot for groups so there's something to click. */
+	/** The editor's dropdown style, tinted orange: used for the "Choose ..." pickers on things that still need filling in. */
+	const FComboButtonStyle& GetChooseComboStyle()
+	{
+		static const FComboButtonStyle Style = []()
+		{
+			FComboButtonStyle ComboStyle = FAppStyle::Get().GetWidgetStyle<FComboButtonStyle>("ComboButton");
+			FButtonStyle ButtonStyle = ComboStyle.ButtonStyle;
+
+			ButtonStyle.Normal.TintColor = FSlateColor(FLinearColor::FromSRGBColor(FColor(140, 66, 14)));
+			ButtonStyle.Hovered.TintColor = FSlateColor(FLinearColor::FromSRGBColor(FColor(176, 84, 20)));
+			ButtonStyle.Pressed.TintColor = FSlateColor(FLinearColor::FromSRGBColor(FColor(116, 54, 10)));
+
+			ComboStyle.SetButtonStyle(ButtonStyle);
+			return ComboStyle;
+		}();
+
+		return Style;
+	}
+
+	/** Turns a slot into a new element of Type. Groups start with no slots; their "+ to ..." button adds them. */
 	void InitializeElement(TInstancedStruct<FEpithWindowElement>& Slot, const UScriptStruct* Type)
 	{
 		Slot.InitializeAsScriptStruct(Type);
 
-		if (FEpithWindowElement_VerticalGroup* Vertical = Slot.GetMutablePtr<FEpithWindowElement_VerticalGroup>())
+		if (FEpithWindowElement_Foldout* FoldoutElement = Slot.GetMutablePtr<FEpithWindowElement_Foldout>())
 		{
-			Vertical->Slots.AddDefaulted();
-		}
-		else if (FEpithWindowElement_HorizontalGroup* Horizontal = Slot.GetMutablePtr<FEpithWindowElement_HorizontalGroup>())
-		{
-			Horizontal->Slots.AddDefaulted();
-		}
-		else if (FEpithWindowElement_TabbedGroup* Tabbed = Slot.GetMutablePtr<FEpithWindowElement_TabbedGroup>())
-		{
-			Tabbed->Slots.AddDefaulted_GetRef().TabName = TEXT("Tab 1");
-		}
-		else if (FEpithWindowElement_FoldoutGroup* Foldout = Slot.GetMutablePtr<FEpithWindowElement_FoldoutGroup>())
-		{
-			Foldout->FoldoutTitle = TEXT("Foldout");
+			FoldoutElement->FoldoutTitle = TEXT("Foldout");
 		}
 	}
 
@@ -112,10 +119,10 @@ namespace EpithDesigner
 			TabSlot.TabName = TEXT("Tab 1");
 			TabSlot.Element = MoveTemp(Inner);
 		}
-		else if (FEpithWindowElement_FoldoutGroup* Foldout = Slot.GetMutablePtr<FEpithWindowElement_FoldoutGroup>())
+		else if (FEpithWindowElement_Foldout* FoldoutElement = Slot.GetMutablePtr<FEpithWindowElement_Foldout>())
 		{
-			Foldout->FoldoutTitle = TEXT("Foldout");
-			Foldout->Element = MoveTemp(Inner);
+			FoldoutElement->FoldoutTitle = TEXT("Foldout");
+			FoldoutElement->Element = MoveTemp(Inner);
 		}
 	}
 }
@@ -132,6 +139,7 @@ public:
 		, _bOnlyWhenHovered(false)
 		, _bOutlineContent(false)
 		, _Padding(FMargin(2))
+		, _FillColor(FLinearColor::Transparent)
 		{}
 
 		SLATE_ARGUMENT(bool, bDashed)
@@ -139,6 +147,12 @@ public:
 
 		/** Outline the content rather than the whole frame, so the padding stays outside the outline. */
 		SLATE_ARGUMENT(bool, bOutlineContent)
+
+		/** While this widget (the group's add button) is hovered, the outline is drawn brighter. */
+		SLATE_ARGUMENT(TWeakPtr<SWidget>, EmphasizeWhileHovered)
+
+		/** Background drawn inside the outline, behind the content (transparent = none). */
+		SLATE_ARGUMENT(FLinearColor, FillColor)
 		SLATE_ARGUMENT(FMargin, Padding)
 		SLATE_EVENT(FOnGetContent, OnGetContextMenu)
 		SLATE_DEFAULT_SLOT(FArguments, Content)
@@ -150,6 +164,8 @@ public:
 		bDashed = InArgs._bDashed;
 		bOnlyWhenHovered = InArgs._bOnlyWhenHovered;
 		bOutlineContent = InArgs._bOutlineContent;
+		EmphasizeWhileHovered = InArgs._EmphasizeWhileHovered;
+		FillColor = InArgs._FillColor;
 		OnGetContextMenu = InArgs._OnGetContextMenu;
 
 		ChildSlot
@@ -161,17 +177,31 @@ public:
 
 	int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
 	{
-		const int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+		if (FillColor.A > 0.0f)
+		{
+			FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None, FillColor);
+		}
+
+		const int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId + 1, InWidgetStyle, bParentEnabled);
 
 		if (bOnlyWhenHovered && !IsHovered())
 		{
 			return MaxLayer;
 		}
 
+		const TSharedPtr<SWidget> EmphasisSource = EmphasizeWhileHovered.Pin();
+		const bool bEmphasized = EmphasisSource.IsValid() && EmphasisSource->IsHovered();
+
 		const FSlateBrush* Brush = FAppStyle::GetBrush("WhiteBrush");
-		const FLinearColor Color = bDashed
+		FLinearColor Color = bDashed
 			? FSlateColor(EStyleColor::Foreground).GetColor(InWidgetStyle).CopyWithNewOpacity(0.4f)
 			: FSlateColor(EStyleColor::Primary).GetColor(InWidgetStyle);
+
+		if (bEmphasized)
+		{
+			// The same blue, lifted toward white
+			Color = FMath::Lerp(Color, FLinearColor::White, 0.45f).CopyWithNewOpacity(1.0f);
+		}
 
 		// Either the whole frame, or just the content inside the padding
 		FGeometry OutlineGeometry = AllottedGeometry;
@@ -256,6 +286,8 @@ private:
 	bool bDashed = false;
 	bool bOnlyWhenHovered = false;
 	bool bOutlineContent = false;
+	TWeakPtr<SWidget> EmphasizeWhileHovered;
+	FLinearColor FillColor = FLinearColor::Transparent;
 	FOnGetContent OnGetContextMenu;
 };
 
@@ -344,6 +376,7 @@ void SEpithPanelDesigner::Redraw()
 {
 	// Let go of the old preview first: its property rows belong to the old PreviewData
 	PreviewArea->SetContent(SNullWidget::NullWidget);
+	PendingAddButton.Reset();
 	PreviewData.Reset();
 
 	UEpithPanelDefinition* PanelDefinition = Definition.Get();
@@ -464,6 +497,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 		.VAlign(VAlign_Center)
 		[
 			SNew(SComboButton)
+			.ComboButtonStyle(&EpithDesigner::GetChooseComboStyle())
 			.ContentPadding(FMargin(6, 2))
 			.OnGetMenuContent_Lambda([this, SlotPtr]()
 			{
@@ -502,8 +536,10 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 		];
 	}
 
+	// Unassigned slots are tinted a faint yellow, so they stand out as still to be filled in
 	return SNew(SEpithDesignerFrame)
 		.bDashed(true)
+		.FillColor(FLinearColor(1.0f, 0.85f, 0.2f, 0.08f))
 		.Padding(FMargin(8, 6))
 		[
 			Row
@@ -514,12 +550,17 @@ TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWind
 {
 	TInstancedStruct<FEpithWindowElement>* SlotPtr = &Slot;
 
+	// If this element is a group, the add button it just made belongs to it
+	TWeakPtr<SWidget> AddButton = PendingAddButton;
+	PendingAddButton.Reset();
+
 	// Options are on right-click. The outline shows while hovered.
 	return SNew(SEpithDesignerFrame)
 		.bOnlyWhenHovered(true)
 		.bOutlineContent(true)
+		.EmphasizeWhileHovered(AddButton)
 		// Each nesting level is inset a little, so nested outlines don't sit on top of each other
-		.Padding(FMargin(6))
+		.Padding(FMargin(0))
 		.OnGetContextMenu_Lambda([this, SlotPtr, Actions]()
 		{
 			return MakeElementMenu(SlotPtr, Actions);
@@ -531,39 +572,30 @@ TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWind
 
 TSharedRef<SWidget> SEpithPanelDesigner::MakeAddButton(const FText& Label, TFunction<void()> AddSlot)
 {
-	return SNew(SButton)
+	TSharedRef<SWidget> Button = SNew(SButton)
 		.ButtonStyle(FAppStyle::Get(), "SimpleButton")
 		.ContentPadding(FMargin(4, 1))
-		.OnClicked_Lambda([this, Label, AddSlot]()
+		.OnClicked_Lambda([this, AddSlot]()
 		{
-			Edit(Label, AddSlot);
+			Edit(LOCTEXT("AddSlotTransaction", "Add Slot"), AddSlot);
 			return FReply::Handled();
 		})
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			[
-				SNew(SImage)
-				.Image(FAppStyle::Get().GetBrush("Icons.Plus"))
-				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-			]
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(4, 0, 0, 0)
-			[
-				SNew(STextBlock)
-				.Text(Label)
-				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
-			]
+			SNew(STextBlock)
+			.Text(Label)
+			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
 		];
+
+	// Picked up by the group's frame in WrapElement
+	PendingAddButton = Button;
+
+	return Button;
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked)
 {
 	return SNew(SComboButton)
+		.ComboButtonStyle(&EpithDesigner::GetChooseComboStyle())
 		.ContentPadding(FMargin(4, 1))
 		.OnGetMenuContent_Lambda([this, OnPicked]()
 		{
@@ -640,6 +672,24 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeElementMenu(TInstancedStruct<FEpith
 			}
 		}));
 
+	// A property element without a picker: unset its property to choose another
+	FEpithWindowElement_Property* PropertyElement = Slot->GetMutablePtr<FEpithWindowElement_Property>();
+
+	if (PropertyElement && !PropertyElement->PropertySelector.GetPropertyPath().IsNone())
+	{
+		Menu.AddMenuEntry(
+			LOCTEXT("UnsetProperty", "Unset Property"),
+			LOCTEXT("UnsetProperty_Tooltip", "Clear the chosen property, so you can choose a different one."),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateLambda([this, PropertyElement]()
+			{
+				Edit(LOCTEXT("UnsetPropertyTransaction", "Unset Property"), [PropertyElement]()
+				{
+					PropertyElement->PropertySelector.SetPropertyPath(NAME_None);
+				});
+			})));
+	}
+
 	Menu.AddMenuEntry(
 		LOCTEXT("Clear", "Clear"),
 		LOCTEXT("Clear_Tooltip", "Empty this slot (and everything in it) so you can choose something else."),
@@ -702,31 +752,31 @@ class SEpithColumnHandles : public SLeafWidget
 {
 public:
 	using FOnCommit = TFunction<void(bool bNameColumn, float NewWidth)>;
-	
+
 	SLATE_BEGIN_ARGS(SEpithColumnHandles) {}
 		SLATE_ARGUMENT(TSharedPtr<FEpithColumnLayout>, Columns)
 		SLATE_ARGUMENT(FOnCommit, OnCommit)
 	SLATE_END_ARGS()
-	
+
 	void Construct(const FArguments& InArgs)
 	{
 		Columns = InArgs._Columns;
 		OnCommit = InArgs._OnCommit;
 	}
-	
+
 	virtual FVector2D ComputeDesiredSize(float) const override
 	{
 		return FVector2D::ZeroVector;
 	}
-	
+
 	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
 	{
 		const int32 Line = DraggingLine != INDEX_NONE ? DraggingLine : HoveredLine;
-		
+
 		if (Line != INDEX_NONE && Columns.IsValid())
 		{
 			const float X = GetLineX(Line, AllottedGeometry);
-			
+
 			FSlateDrawElement::MakeBox(
 				OutDrawElements,
 				LayerId,
@@ -735,44 +785,44 @@ public:
 				ESlateDrawEffect::None,
 				FStyleColors::Select.GetColor(InWidgetStyle));
 		}
-		
+
 		return LayerId + 1;
 	}
-	
+
 	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
 	{
 		if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
 		{
 			return FReply::Unhandled();
 		}
-		
+
 		const float LocalX = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X;
 		const int32 Line = FindLine(LocalX, MyGeometry);
-		
+
 		if (Line == INDEX_NONE)
 		{
 			return FReply::Unhandled();
 		}
-		
+
 		DraggingLine = Line;
 		DragStartX = LocalX;
 		DragStartWidth = GetColumnWidth(Line, MyGeometry);
 		LiveWidth = DragStartWidth;
 		bMoved = false;
-		
+
 		return FReply::Handled().CaptureMouse(SharedThis(this));
 	}
-	
+
 	virtual FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
 	{
 		const float LocalX = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X;
-		
+
 		if (DraggingLine != INDEX_NONE && HasMouseCapture())
 		{
 			const float Delta = LocalX - DragStartX;
 			bMoved |= FMath::Abs(Delta) >= 1.0f;
 			LiveWidth = FMath::RoundToFloat(FMath::Max(MinColumnWidth, DragStartWidth + Delta));
-			
+
 			if (DraggingLine == 0)
 			{
 				Columns->SetFixedNameWidth(LiveWidth);
@@ -781,130 +831,130 @@ public:
 			{
 				Columns->SetFixedValueWidth(LiveWidth);
 			}
-			
+
 			return FReply::Handled();
 		}
-		
+
 		HoveredLine = FindLine(LocalX, MyGeometry);
 		return FReply::Unhandled();
 	}
-	
+
 	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
 	{
 		if (DraggingLine == INDEX_NONE || MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
 		{
 			return FReply::Unhandled();
 		}
-		
+
 		const int32 Line = DraggingLine;
 		DraggingLine = INDEX_NONE;
-		
+
 		// A click without a drag changes nothing (and doesn't turn an automatic width into a fixed one)
 		if (bMoved && OnCommit)
 		{
 			OnCommit(Line == 0, LiveWidth);
 		}
-		
+
 		return FReply::Handled().ReleaseMouseCapture();
 	}
-	
+
 	virtual FReply OnMouseButtonDoubleClick(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
 	{
 		const int32 Line = FindLine(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X, MyGeometry);
-		
+
 		if (Line == INDEX_NONE || MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
 		{
 			return FReply::Unhandled();
 		}
-		
+
 		if (OnCommit)
 		{
 			OnCommit(Line == 0, 0.0f);
 		}
-		
+
 		return FReply::Handled();
 	}
-	
+
 	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override
 	{
 		SLeafWidget::OnMouseLeave(MouseEvent);
 		HoveredLine = INDEX_NONE;
 	}
-	
+
 	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override
 	{
 		DraggingLine = INDEX_NONE;
 	}
-	
+
 	virtual FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override
 	{
 		if (DraggingLine != INDEX_NONE || FindLine(MyGeometry.AbsoluteToLocal(CursorEvent.GetScreenSpacePosition()).X, MyGeometry) != INDEX_NONE)
 		{
 			return FCursorReply::Cursor(EMouseCursor::ResizeLeftRight);
 		}
-		
+
 		return FCursorReply::Unhandled();
 	}
-	
+
 private:
 	static constexpr float GrabDistance = 3.0f;
 	static constexpr float MinColumnWidth = 16.0f;
-	
+
 	float GetNameLineX() const
 	{
 		const FOptionalSize NameWidth = Columns->GetNameWidth();
 		return NameWidth.IsSet() ? NameWidth.Get() : 0.0f;
 	}
-	
+
 	/** Left edge of a column line, matching the row layout in EpithPropertyRow: the value column fills the row unless its width is fixed. */
 	float GetLineX(int32 Line, const FGeometry& Geometry) const
 	{
 		const float NameX = GetNameLineX();
-		
+
 		if (Line == 0)
 		{
 			return NameX;
 		}
-		
+
 		const FOptionalSize ValueWidth = Columns->GetValueWidth();
-		
+
 		return ValueWidth.IsSet()
 			? NameX + FEpithColumnLayout::LineWidth + ValueWidth.Get()
 			: Geometry.GetLocalSize().X - FEpithColumnLayout::ResetColumnWidth - FEpithColumnLayout::LineWidth;
 	}
-	
+
 	float GetColumnWidth(int32 Line, const FGeometry& Geometry) const
 	{
 		return Line == 0 ? GetNameLineX() : GetLineX(1, Geometry) - GetNameLineX() - FEpithColumnLayout::LineWidth;
 	}
-	
+
 	int32 FindLine(float LocalX, const FGeometry& Geometry) const
 	{
 		if (!Columns.IsValid())
 		{
 			return INDEX_NONE;
 		}
-		
+
 		int32 Best = INDEX_NONE;
 		float BestDistance = GrabDistance;
-		
+
 		for (int32 Line = 0; Line < 2; ++Line)
 		{
 			const float Distance = FMath::Abs(LocalX - (GetLineX(Line, Geometry) + 0.5f));
-			
+
 			if (Distance <= BestDistance)
 			{
 				Best = Line;
 				BestDistance = Distance;
 			}
 		}
-		
+
 		return Best;
 	}
-	
+
 	TSharedPtr<FEpithColumnLayout> Columns;
 	FOnCommit OnCommit;
-	
+
 	int32 HoveredLine = INDEX_NONE;
 	int32 DraggingLine = INDEX_NONE;
 	float DragStartX = 0.0f;
@@ -917,12 +967,12 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeColumnHandles(const TSharedRef<FEpi
 {
 	// The group's settings, inside the definition being edited (everything is rebuilt on each redraw, so this stays valid while shown)
 	FEpithColumnSettings* Settings = const_cast<FEpithColumnSettings*>(Columns->GetSourceSettings());
-	
+
 	if (!Settings)
 	{
 		return SNullWidget::NullWidget;
 	}
-	
+
 	return SNew(SEpithColumnHandles)
 		.Columns(Columns)
 		.OnCommit([this, Settings](bool bNameColumn, float NewWidth)
@@ -930,7 +980,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeColumnHandles(const TSharedRef<FEpi
 			const FText Description = bNameColumn
 				? LOCTEXT("ResizeNameColumn", "Resize Name Column")
 				: LOCTEXT("ResizeValueColumn", "Resize Value Column");
-			
+
 			Edit(Description, [Settings, bNameColumn, NewWidth]()
 			{
 				(bNameColumn ? Settings->NameColumnWidth : Settings->ValueColumnWidth) = NewWidth;

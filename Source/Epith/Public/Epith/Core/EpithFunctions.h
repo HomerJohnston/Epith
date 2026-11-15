@@ -6,7 +6,7 @@ enum class EEpithWindowElementType : uint8
 	VerticalGroup,
 	HorizontalGroup,
 	TabGroup,
-	FoldoutGroup,
+	Foldout,
 	Property,
 };
 

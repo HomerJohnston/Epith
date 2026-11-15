@@ -49,7 +49,7 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 		.AutoHeight()
 		.Padding(4, 2)
 		[
-			Context.Designer->MakeAddButton(LOCTEXT("VerticalGroup_Add", "Add"), [SlotsPtr = &MutableSlots]()
+			Context.Designer->MakeAddButton(LOCTEXT("VerticalGroup_Add", "+ to Vertical Group"), [SlotsPtr = &MutableSlots]()
 			{
 				SlotsPtr->AddDefaulted();
 			})

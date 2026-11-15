@@ -65,8 +65,8 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(const FEpithDrawContext& 
 		return Row;
 	}
 
-	// Designer: a preview of the row, then a property picker. The row comes first so names and values still line up with
-	// the group's other rows. The preview is for looks only: it shows the class defaults and doesn't take clicks.
+	// Designer: a property picker until a property is chosen, then a preview of its row. (To choose another property,
+	// right-click > Unset Property.) The preview is for looks only: it shows the class defaults and doesn't take clicks.
 	FEpithPropertySelector* MutableSelector = const_cast<FEpithPropertySelector*>(&PropertySelector);
 
 	TSharedRef<SHorizontalBox> Box = SNew(SHorizontalBox);
@@ -83,7 +83,7 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(const FEpithDrawContext& 
 					Row.ToSharedRef()
 				]
 			];
-		
+
 		if (Context.Columns.IsValid())
 		{
 			Preview->AddSlot()
@@ -91,7 +91,7 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(const FEpithDrawContext& 
 				Context.Designer->MakeColumnHandles(Context.Columns.ToSharedRef())
 			];
 		}
-		
+
 		// Fills the width like rows in the real panel do, so the reset column sits at the right edge here too
 		Box->AddSlot()
 		.FillWidth(1.0f)
@@ -102,15 +102,18 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(const FEpithDrawContext& 
 		];
 	}
 
-	Box->AddSlot()
-	.AutoWidth()
-	.VAlign(VAlign_Center)
-	[
-		Context.Designer->MakePropertyPicker(PropertyPath, [MutableSelector](FName NewPath)
-		{
-			MutableSelector->SetPropertyPath(NewPath);
-		})
-	];
+	if (PropertyPath.IsNone())
+	{
+		Box->AddSlot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		[
+			Context.Designer->MakePropertyPicker(PropertyPath, [MutableSelector](FName NewPath)
+			{
+				MutableSelector->SetPropertyPath(NewPath);
+			})
+		];
+	}
 
 	return Box;
 }

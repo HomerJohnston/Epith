@@ -10,7 +10,7 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 {
 	// In the designer, slots are edited in place (see EpithDraw::DrawSlot)
 	TArray<FEpithWindowElement_HorizontalGroup_Slot>& MutableSlots = const_cast<TArray<FEpithWindowElement_HorizontalGroup_Slot>&>(Slots);
-	
+
 	// This group's property rows line up with each other
 	const FEpithDrawContext ChildContext = Context.WithColumns(Columns);
 
@@ -51,7 +51,7 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 		.AutoWidth()
 		.Padding(4, 2)
 		[
-			Context.Designer->MakeAddButton(LOCTEXT("HorizontalGroup_Add", "Add"), [SlotsPtr = &MutableSlots]()
+			Context.Designer->MakeAddButton(LOCTEXT("HorizontalGroup_Add", "+ to Horizontal Group"), [SlotsPtr = &MutableSlots]()
 			{
 				SlotsPtr->AddDefaulted();
 			})

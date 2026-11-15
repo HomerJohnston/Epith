@@ -15,7 +15,7 @@ struct FEpithWindowElement_BoxDisplayParams
 	bool bBorder = false;
 
 	UPROPERTY(EditDefaultsOnly, meta = (ClampMin = 0, ClampMax = 40, UIMin = 0, UIMax = 20))
-	uint8 Padding = 4;
+	uint8 Padding = 0;
 };
 
 /** Column widths for the property rows directly inside a group (and their nested struct/array rows), so names and values line up. */

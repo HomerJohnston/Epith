@@ -1,9 +1,9 @@
-﻿#include "Epith/Widgets/EpithWindowElement_FoldoutGroup.h"
+﻿#include "Epith/Widgets/EpithWindowElement_Foldout.h"
 
 #include "Epith/Style/EpithColor.h"
 #include "Epith/Widgets/EpithDrawContext.h"
 
-TSharedPtr<SWidget> FEpithWindowElement_FoldoutGroup::Draw(const FEpithDrawContext& Context) const
+TSharedPtr<SWidget> FEpithWindowElement_Foldout::Draw(const FEpithDrawContext& Context) const
 {
 	TSharedPtr<SWidget> ElementWidget = EpithDraw::DrawSlot(Element, Context.WithColumns(Columns));
 

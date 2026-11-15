@@ -2,19 +2,20 @@
 
 #include "EpithWindowElement.h"
 
-#include "EpithWindowElement_FoldoutGroup.generated.h"
+#include "EpithWindowElement_Foldout.generated.h"
 
-USTRUCT(DisplayName = "Foldout Group")
-struct FEpithWindowElement_FoldoutGroup : public FEpithWindowElement
+/** A collapsible section with a title, holding one element. */
+USTRUCT(DisplayName = "Foldout")
+struct FEpithWindowElement_Foldout : public FEpithWindowElement
 {
 	GENERATED_BODY()
 
-	virtual ~FEpithWindowElement_FoldoutGroup() {}
+	virtual ~FEpithWindowElement_Foldout() {}
 
 	UPROPERTY(EditDefaultsOnly)
 	FString FoldoutTitle;
 
-	/** Column widths for the property rows in this group. */
+	/** Column widths for the property rows in this foldout. */
 	UPROPERTY(EditDefaultsOnly)
 	FEpithColumnSettings Columns;
 	
