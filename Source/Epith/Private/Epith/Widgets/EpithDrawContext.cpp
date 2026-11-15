@@ -30,9 +30,10 @@ TSharedPtr<SWidget> EpithDraw::DrawSlot(const TInstancedStruct<FEpithWindowEleme
 
 uint64 FEpithColumnLayout::Generation = 0;
 
-FEpithColumnLayout::FEpithColumnLayout(float InFixedNameWidth, float InFixedValueWidth)
+FEpithColumnLayout::FEpithColumnLayout(float InFixedNameWidth, float InFixedValueWidth, const FEpithColumnSettings* InSourceSettings)
 	: FixedNameWidth(InFixedNameWidth)
 	, FixedValueWidth(InFixedValueWidth)
+	, SourceSettings(InSourceSettings)
 {
 }
 
@@ -102,6 +103,6 @@ FOptionalSize FEpithColumnLayout::GetValueWidth() const
 FEpithDrawContext FEpithDrawContext::WithColumns(const FEpithColumnSettings& Settings) const
 {
 	FEpithDrawContext ChildContext = *this;
-	ChildContext.Columns = MakeShared<FEpithColumnLayout>(Settings.NameColumnWidth, Settings.ValueColumnWidth);
+	ChildContext.Columns = MakeShared<FEpithColumnLayout>(Settings.NameColumnWidth, Settings.ValueColumnWidth, &Settings);
 	return ChildContext;
 }

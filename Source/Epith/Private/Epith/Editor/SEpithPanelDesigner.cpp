@@ -8,6 +8,7 @@
 #include "Epith/EpithPanelDefinition.h"
 #include "Epith/Misc/EpithPropertyDataContainer.h"
 #include "Epith/Style/EpithStyle.h"
+#include "Epith/Widgets/EpithDrawContext.h"
 #include "Epith/Widgets/EpithWindowElement_FoldoutGroup.h"
 #include "Epith/Widgets/EpithWindowElement_HorizontalGroup.h"
 #include "Epith/Widgets/EpithWindowElement_Property.h"
@@ -18,6 +19,7 @@
 #include "Styling/AppStyle.h"
 #include "Styling/StyleColors.h"
 #include "Widgets/SBoxPanel.h"
+#include "Widgets/SLeafWidget.h"
 #include "Widgets/SNullWidget.h"
 #include "Widgets/SOverlay.h"
 #include "Widgets/Images/SImage.h"
@@ -401,7 +403,7 @@ void SEpithPanelDesigner::Redraw()
 				]
 			]
 		]);
-	
+
 	// Line up property columns on the first frame (no one-frame flicker)
 	FEpithColumnLayout::MeasureNow(PreviewArea.ToSharedRef());
 }
@@ -512,58 +514,19 @@ TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWind
 {
 	TInstancedStruct<FEpithWindowElement>* SlotPtr = &Slot;
 
-	const UScriptStruct* Type = Slot.GetScriptStruct();
-	const FText TypeName = Type ? Type->GetDisplayNameText() : FText::GetEmpty();
-
-	// The menu button shows while the frame is hovered; the frame is created after the button, so share a pointer to it
-	TSharedRef<TWeakPtr<SWidget>> FrameHolder = MakeShared<TWeakPtr<SWidget>>();
-
-	TSharedRef<SWidget> MenuButton = SNew(SComboButton)
-		.HasDownArrow(false)
-		.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-		.ContentPadding(FMargin(4, 0))
-		.ToolTipText(FText::Format(LOCTEXT("Element_MenuTooltip", "{0} options (or right-click)"), TypeName))
-		.Visibility_Lambda([FrameHolder]()
-		{
-			TSharedPtr<SWidget> Frame = FrameHolder->Pin();
-			return Frame.IsValid() && Frame->IsHovered() ? EVisibility::Visible : EVisibility::Hidden;
-		})
-		.OnGetMenuContent_Lambda([this, SlotPtr, Actions]()
-		{
-			return MakeElementMenu(SlotPtr, Actions);
-		})
-		.ButtonContent()
-		[
-			SNew(STextBlock)
-			.Text(LOCTEXT("Element_MenuButton", "..."))
-		];
-
-	TSharedRef<SEpithDesignerFrame> Frame = SNew(SEpithDesignerFrame)
+	// Options are on right-click. The outline shows while hovered.
+	return SNew(SEpithDesignerFrame)
 		.bOnlyWhenHovered(true)
 		.bOutlineContent(true)
-		// Each nesting level is inset by this much, so a child's "..." button never sits on top of its parent's
-		.Padding(FMargin(14))
+		// Each nesting level is inset a little, so nested outlines don't sit on top of each other
+		.Padding(FMargin(6))
 		.OnGetContextMenu_Lambda([this, SlotPtr, Actions]()
 		{
 			return MakeElementMenu(SlotPtr, Actions);
 		})
 		[
-			SNew(SOverlay)
-			+ SOverlay::Slot()
-			[
-				ElementWidget
-			]
-			+ SOverlay::Slot()
-			.HAlign(HAlign_Right)
-			.VAlign(VAlign_Top)
-			[
-				MenuButton
-			]
+			ElementWidget
 		];
-
-	*FrameHolder = Frame;
-
-	return Frame;
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::MakeAddButton(const FText& Label, TFunction<void()> AddSlot)
@@ -726,6 +689,253 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeElementMenu(TInstancedStruct<FEpith
 	Menu.EndSection();
 
 	return Menu.MakeWidget();
+}
+
+// ------------------------------------------------------------------------------------------------
+
+/**
+ * Invisible except over a property row's two column lines (Name | Value | Reset), where it shows a resize cursor and a highlight.
+ * Dragging a line resizes that column for the whole group live; letting go saves the width to the group's settings.
+ * Double-clicking a line sets the column back to automatic. Everywhere else, clicks pass through to the designer frame.
+ */
+class SEpithColumnHandles : public SLeafWidget
+{
+public:
+	using FOnCommit = TFunction<void(bool bNameColumn, float NewWidth)>;
+	
+	SLATE_BEGIN_ARGS(SEpithColumnHandles) {}
+		SLATE_ARGUMENT(TSharedPtr<FEpithColumnLayout>, Columns)
+		SLATE_ARGUMENT(FOnCommit, OnCommit)
+	SLATE_END_ARGS()
+	
+	void Construct(const FArguments& InArgs)
+	{
+		Columns = InArgs._Columns;
+		OnCommit = InArgs._OnCommit;
+	}
+	
+	virtual FVector2D ComputeDesiredSize(float) const override
+	{
+		return FVector2D::ZeroVector;
+	}
+	
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
+	{
+		const int32 Line = DraggingLine != INDEX_NONE ? DraggingLine : HoveredLine;
+		
+		if (Line != INDEX_NONE && Columns.IsValid())
+		{
+			const float X = GetLineX(Line, AllottedGeometry);
+			
+			FSlateDrawElement::MakeBox(
+				OutDrawElements,
+				LayerId,
+				AllottedGeometry.ToPaintGeometry(FVector2f(3.0f, AllottedGeometry.GetLocalSize().Y), FSlateLayoutTransform(FVector2f(X - 1.0f, 0.0f))),
+				FAppStyle::GetBrush("WhiteBrush"),
+				ESlateDrawEffect::None,
+				FStyleColors::Select.GetColor(InWidgetStyle));
+		}
+		
+		return LayerId + 1;
+	}
+	
+	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+		{
+			return FReply::Unhandled();
+		}
+		
+		const float LocalX = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X;
+		const int32 Line = FindLine(LocalX, MyGeometry);
+		
+		if (Line == INDEX_NONE)
+		{
+			return FReply::Unhandled();
+		}
+		
+		DraggingLine = Line;
+		DragStartX = LocalX;
+		DragStartWidth = GetColumnWidth(Line, MyGeometry);
+		LiveWidth = DragStartWidth;
+		bMoved = false;
+		
+		return FReply::Handled().CaptureMouse(SharedThis(this));
+	}
+	
+	virtual FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		const float LocalX = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X;
+		
+		if (DraggingLine != INDEX_NONE && HasMouseCapture())
+		{
+			const float Delta = LocalX - DragStartX;
+			bMoved |= FMath::Abs(Delta) >= 1.0f;
+			LiveWidth = FMath::RoundToFloat(FMath::Max(MinColumnWidth, DragStartWidth + Delta));
+			
+			if (DraggingLine == 0)
+			{
+				Columns->SetFixedNameWidth(LiveWidth);
+			}
+			else
+			{
+				Columns->SetFixedValueWidth(LiveWidth);
+			}
+			
+			return FReply::Handled();
+		}
+		
+		HoveredLine = FindLine(LocalX, MyGeometry);
+		return FReply::Unhandled();
+	}
+	
+	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		if (DraggingLine == INDEX_NONE || MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+		{
+			return FReply::Unhandled();
+		}
+		
+		const int32 Line = DraggingLine;
+		DraggingLine = INDEX_NONE;
+		
+		// A click without a drag changes nothing (and doesn't turn an automatic width into a fixed one)
+		if (bMoved && OnCommit)
+		{
+			OnCommit(Line == 0, LiveWidth);
+		}
+		
+		return FReply::Handled().ReleaseMouseCapture();
+	}
+	
+	virtual FReply OnMouseButtonDoubleClick(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		const int32 Line = FindLine(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X, MyGeometry);
+		
+		if (Line == INDEX_NONE || MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+		{
+			return FReply::Unhandled();
+		}
+		
+		if (OnCommit)
+		{
+			OnCommit(Line == 0, 0.0f);
+		}
+		
+		return FReply::Handled();
+	}
+	
+	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override
+	{
+		SLeafWidget::OnMouseLeave(MouseEvent);
+		HoveredLine = INDEX_NONE;
+	}
+	
+	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override
+	{
+		DraggingLine = INDEX_NONE;
+	}
+	
+	virtual FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override
+	{
+		if (DraggingLine != INDEX_NONE || FindLine(MyGeometry.AbsoluteToLocal(CursorEvent.GetScreenSpacePosition()).X, MyGeometry) != INDEX_NONE)
+		{
+			return FCursorReply::Cursor(EMouseCursor::ResizeLeftRight);
+		}
+		
+		return FCursorReply::Unhandled();
+	}
+	
+private:
+	static constexpr float GrabDistance = 3.0f;
+	static constexpr float MinColumnWidth = 16.0f;
+	
+	float GetNameLineX() const
+	{
+		const FOptionalSize NameWidth = Columns->GetNameWidth();
+		return NameWidth.IsSet() ? NameWidth.Get() : 0.0f;
+	}
+	
+	/** Left edge of a column line, matching the row layout in EpithPropertyRow: the value column fills the row unless its width is fixed. */
+	float GetLineX(int32 Line, const FGeometry& Geometry) const
+	{
+		const float NameX = GetNameLineX();
+		
+		if (Line == 0)
+		{
+			return NameX;
+		}
+		
+		const FOptionalSize ValueWidth = Columns->GetValueWidth();
+		
+		return ValueWidth.IsSet()
+			? NameX + FEpithColumnLayout::LineWidth + ValueWidth.Get()
+			: Geometry.GetLocalSize().X - FEpithColumnLayout::ResetColumnWidth - FEpithColumnLayout::LineWidth;
+	}
+	
+	float GetColumnWidth(int32 Line, const FGeometry& Geometry) const
+	{
+		return Line == 0 ? GetNameLineX() : GetLineX(1, Geometry) - GetNameLineX() - FEpithColumnLayout::LineWidth;
+	}
+	
+	int32 FindLine(float LocalX, const FGeometry& Geometry) const
+	{
+		if (!Columns.IsValid())
+		{
+			return INDEX_NONE;
+		}
+		
+		int32 Best = INDEX_NONE;
+		float BestDistance = GrabDistance;
+		
+		for (int32 Line = 0; Line < 2; ++Line)
+		{
+			const float Distance = FMath::Abs(LocalX - (GetLineX(Line, Geometry) + 0.5f));
+			
+			if (Distance <= BestDistance)
+			{
+				Best = Line;
+				BestDistance = Distance;
+			}
+		}
+		
+		return Best;
+	}
+	
+	TSharedPtr<FEpithColumnLayout> Columns;
+	FOnCommit OnCommit;
+	
+	int32 HoveredLine = INDEX_NONE;
+	int32 DraggingLine = INDEX_NONE;
+	float DragStartX = 0.0f;
+	float DragStartWidth = 0.0f;
+	float LiveWidth = 0.0f;
+	bool bMoved = false;
+};
+
+TSharedRef<SWidget> SEpithPanelDesigner::MakeColumnHandles(const TSharedRef<FEpithColumnLayout>& Columns)
+{
+	// The group's settings, inside the definition being edited (everything is rebuilt on each redraw, so this stays valid while shown)
+	FEpithColumnSettings* Settings = const_cast<FEpithColumnSettings*>(Columns->GetSourceSettings());
+	
+	if (!Settings)
+	{
+		return SNullWidget::NullWidget;
+	}
+	
+	return SNew(SEpithColumnHandles)
+		.Columns(Columns)
+		.OnCommit([this, Settings](bool bNameColumn, float NewWidth)
+		{
+			const FText Description = bNameColumn
+				? LOCTEXT("ResizeNameColumn", "Resize Name Column")
+				: LOCTEXT("ResizeValueColumn", "Resize Value Column");
+			
+			Edit(Description, [Settings, bNameColumn, NewWidth]()
+			{
+				(bNameColumn ? Settings->NameColumnWidth : Settings->ValueColumnWidth) = NewWidth;
+			});
+		});
 }
 
 #undef LOCTEXT_NAMESPACE

@@ -10,13 +10,11 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 {
 	// In the designer, slots are edited in place (see EpithDraw::DrawSlot)
 	TArray<FEpithWindowElement_VerticalGroup_Slot>& MutableSlots = const_cast<TArray<FEpithWindowElement_VerticalGroup_Slot>&>(Slots);
-	
+
 	// This group's property rows line up with each other
 	const FEpithDrawContext ChildContext = Context.WithColumns(Columns);
 
 	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
-
-	int32 SlotsNum = Slots.Num();
 
 	for (int32 i = 0; i < Slots.Num(); ++i)
 	{
@@ -31,9 +29,9 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 			continue;
 		}
 
+		// The slot's own Padding setting is the only spacing, so property rows can sit flush like a Details panel
 		Box->AddSlot()
 		.AutoHeight()
-		.Padding(4, 1, 4, i == SlotsNum - 1 ? 1 : 0)
 		[
 			SNew(SBorder)
 			.Padding(Slot.DisplayParams.Padding)

@@ -4,6 +4,7 @@
 #include "Epith/Misc/EpithPropertyDataContainer.h"
 #include "Epith/Widgets/EpithDrawContext.h"
 #include "Styling/StyleColors.h"
+#include "Widgets/SOverlay.h"
 
 #define LOCTEXT_NAMESPACE "Epith"
 
@@ -67,24 +68,40 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(const FEpithDrawContext& 
 	// Designer: a preview of the row, then a property picker. The row comes first so names and values still line up with
 	// the group's other rows. The preview is for looks only: it shows the class defaults and doesn't take clicks.
 	FEpithPropertySelector* MutableSelector = const_cast<FEpithPropertySelector*>(&PropertySelector);
-	
+
 	TSharedRef<SHorizontalBox> Box = SNew(SHorizontalBox);
-	
+
 	if (Row.IsValid())
 	{
+		// In a group, drag handles over the column lines resize the group's columns
+		TSharedRef<SOverlay> Preview = SNew(SOverlay)
+			+ SOverlay::Slot()
+			[
+				SNew(SBox)
+				.Visibility(EVisibility::HitTestInvisible)
+				[
+					Row.ToSharedRef()
+				]
+			];
+		
+		if (Context.Columns.IsValid())
+		{
+			Preview->AddSlot()
+			[
+				Context.Designer->MakeColumnHandles(Context.Columns.ToSharedRef())
+			];
+		}
+		
+		// Fills the width like rows in the real panel do, so the reset column sits at the right edge here too
 		Box->AddSlot()
-		.AutoWidth()
+		.FillWidth(1.0f)
 		.VAlign(VAlign_Center)
 		.Padding(0, 0, 8, 0)
 		[
-			SNew(SBox)
-			.Visibility(EVisibility::HitTestInvisible)
-			[
-				Row.ToSharedRef()
-			]
+			Preview
 		];
 	}
-	
+
 	Box->AddSlot()
 	.AutoWidth()
 	.VAlign(VAlign_Center)
@@ -94,7 +111,7 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(const FEpithDrawContext& 
 			MutableSelector->SetPropertyPath(NewPath);
 		})
 	];
-	
+
 	return Box;
 }
 

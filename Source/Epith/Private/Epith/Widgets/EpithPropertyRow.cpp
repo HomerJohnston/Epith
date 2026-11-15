@@ -13,6 +13,7 @@
 #include "Styling/StyleColors.h"
 #include "UObject/UnrealType.h"
 #include "Widgets/SBoxPanel.h"
+#include "Widgets/SLeafWidget.h"
 #include "Widgets/SNullWidget.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
@@ -25,8 +26,96 @@
 
 namespace EpithPropertyRow
 {
-	constexpr float IndentPerLevel = 12.0f;
+	// Same measurements as the Details panel (SDetailSingleItemRow, SDetailRowIndent, PropertyEditorConstants)
+	constexpr float IndentPerLevel = 16.0f;
 	constexpr float ExpanderWidth = 16.0f;
+	constexpr float RowMinHeight = 26.0f;
+	constexpr float ResetColumnWidth = FEpithColumnLayout::ResetColumnWidth;
+
+	/** Space above and below each row's widgets, so tall values don't touch the lines. */
+	constexpr float RowVerticalPadding = 2.0f;
+
+	/**
+	 * The Details panel's row color (PropertyEditorConstants::GetRowBackgroundColor, which is private to PropertyEditor):
+	 * the panel color, a few shades lighter per nesting level (bouncing back after 3 levels), and the header color while hovered.
+	 */
+	FSlateColor GetRowBackgroundColor(int32 Level, bool bHovered)
+	{
+		int32 ColorIndex = 0;
+		int32 Increment = 1;
+
+		for (int32 i = 0; i < Level; ++i)
+		{
+			ColorIndex += Increment;
+
+			if (ColorIndex == 0 || ColorIndex == 3)
+			{
+				Increment = -Increment;
+			}
+		}
+
+		static const uint8 ColorOffsets[] = { 0, 4, 4 + 2, 6 + 4, 10 + 6 };
+
+		const FSlateColor BaseSlateColor = FAppStyle::Get().GetSlateColor(bHovered ? "Colors.Header" : "Colors.Panel");
+		const FColor BaseColor = BaseSlateColor.GetSpecifiedColor().ToFColor(true);
+		const uint8 Offset = ColorOffsets[FMath::Clamp(ColorIndex, 0, 4)];
+
+		return FSlateColor(FLinearColor::FromSRGBColor(FColor(BaseColor.R + Offset, BaseColor.G + Offset, BaseColor.B + Offset)));
+	}
+
+	/** One strip per nesting level in that level's color, with the array drop shadow, like SDetailRowIndent. */
+	class SEpithRowIndent : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SEpithRowIndent) {}
+			SLATE_ARGUMENT(int32, Depth)
+			SLATE_ATTRIBUTE(bool, IsRowHovered)
+		SLATE_END_ARGS()
+
+		void Construct(const FArguments& InArgs)
+		{
+			Depth = InArgs._Depth;
+			IsRowHovered = InArgs._IsRowHovered;
+		}
+
+		virtual FVector2D ComputeDesiredSize(float) const override
+		{
+			return FVector2D(Depth * IndentPerLevel, 0.0f);
+		}
+
+		virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
+		{
+			const FSlateBrush* BackgroundBrush = FAppStyle::Get().GetBrush("DetailsView.CategoryMiddle");
+			const FSlateBrush* DropShadowBrush = FAppStyle::Get().GetBrush("DetailsView.ArrayDropShadow");
+			const bool bHovered = IsRowHovered.Get(false);
+			const float Height = AllottedGeometry.GetLocalSize().Y;
+
+			for (int32 i = 0; i < Depth; ++i)
+			{
+				const FPaintGeometry Strip = AllottedGeometry.ToPaintGeometry(FVector2f(IndentPerLevel, Height), FSlateLayoutTransform(FVector2f(IndentPerLevel * i, 0.0f)));
+
+				FSlateDrawElement::MakeBox(OutDrawElements, LayerId, Strip, BackgroundBrush, ESlateDrawEffect::None, GetRowBackgroundColor(i, bHovered).GetColor(InWidgetStyle));
+				FSlateDrawElement::MakeBox(OutDrawElements, LayerId + 1, Strip, DropShadowBrush);
+			}
+
+			return LayerId + 1;
+		}
+
+	private:
+		int32 Depth = 0;
+		TAttribute<bool> IsRowHovered;
+	};
+
+	/** A 1px column divider; the gaps between the Details panel's splitter columns. */
+	TSharedRef<SWidget> MakeColumnLine()
+	{
+		return SNew(SBox)
+			.WidthOverride(FEpithColumnLayout::LineWidth)
+			[
+				SNew(SImage)
+				.Image(FAppStyle::Get().GetBrush("DetailsView.GridLine"))
+			];
+	}
 
 	/**
 	 * Every IDetailTreeNode a property row generator hands out is an FDetailTreeNode (the engine relies on this as well, in
@@ -275,7 +364,7 @@ namespace EpithPropertyRow
 
 			PinnedContainer->SetContent(MakeChildRows(Children, PinnedData.ToSharedRef(), Depth + 1, Columns));
 			bBuilt = true;
-			
+
 			// New child rows may be wider than the group's column; measure them now so the column doesn't jump a frame later
 			if (Columns.IsValid())
 			{
@@ -351,13 +440,23 @@ namespace EpithPropertyRow
 		// group's shared name-column width, so values line up even for nested (indented) rows, like the Details panel.
 		TSharedRef<SHorizontalBox> NameArea = SNew(SHorizontalBox);
 
+		// Whether this row's own line (not its children) is under the mouse; set once the row's border exists
+		TSharedRef<TWeakPtr<SWidget>> HoverSource = MakeShared<TWeakPtr<SWidget>>();
+		const TAttribute<bool> IsRowHovered = TAttribute<bool>::CreateLambda([HoverSource]()
+		{
+			TSharedPtr<SWidget> Source = HoverSource->Pin();
+			return Source.IsValid() && Source->IsHovered();
+		});
+
 		if (Depth > 0)
 		{
 			NameArea->AddSlot()
 			.AutoWidth()
+			.VAlign(VAlign_Fill)
 			[
-				SNew(SSpacer)
-				.Size(FVector2D(Depth * IndentPerLevel, 1))
+				SNew(SEpithRowIndent)
+				.Depth(Depth)
+				.IsRowHovered(IsRowHovered)
 			];
 		}
 
@@ -439,8 +538,9 @@ namespace EpithPropertyRow
 				]
 			];
 		}
-		else if (Depth > 0)
+		else
 		{
+			// Rows without children keep the arrow's space, so names line up (the Details panel does the same)
 			NameArea->AddSlot()
 			.AutoWidth()
 			[
@@ -478,12 +578,20 @@ namespace EpithPropertyRow
 			NameArea->AddSlot()
 			.AutoWidth()
 			.VAlign(VAlign_Center)
-			.Padding(0, 0, 8, 0)
+			.Padding(2, RowVerticalPadding, 10, RowVerticalPadding)
 			[
 				Row.NameWidget.Widget
 			];
 
-			ValueWidget = Row.ValueWidget.Widget;
+			// The value's own minimum width, as the Details panel applies it. Its maximum isn't applied: the value stretches to
+			// fill the value column, whose width the panel's author sets.
+			const TOptional<float> MinWidth = Row.ValueWidget.MinWidth;
+
+			ValueWidget = SNew(SBox)
+				.MinDesiredWidth(MinWidth.IsSet() ? FOptionalSize(MinWidth.GetValue()) : FOptionalSize())
+				[
+					Row.ValueWidget.Widget
+				];
 		}
 		else
 		{
@@ -496,87 +604,150 @@ namespace EpithPropertyRow
 			];
 		}
 
+		// | Name | Value | Reset |, laid out like a Details panel row: 1px lines between the columns, and the row background
+		// covers all but the bottom pixel of a grid-line colored border, which shows through as the line under the row.
 		TSharedRef<SHorizontalBox> RowBox = SNew(SHorizontalBox);
+		const bool bAligned = Columns.IsValid() && ValueWidget.IsValid();
 
-		if (Columns.IsValid() && ValueWidget.IsValid())
+		if (bAligned)
 		{
 			Columns->RegisterNameArea(NameArea);
-
-			RowBox->AddSlot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			[
-				SNew(SBox)
-				.Clipping(EWidgetClipping::ClipToBounds)
-				.WidthOverride_Lambda([Columns]()
-				{
-					return Columns->GetNameWidth();
-				})
-				[
-					NameArea
-				]
-			];
-
-			RowBox->AddSlot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			[
-				SNew(SBox)
-				.WidthOverride_Lambda([Columns]()
-				{
-					return Columns->GetValueWidth();
-				})
-				[
-					ValueWidget.ToSharedRef()
-				]
-			];
 		}
-		else
+
+		// Name
+		RowBox->AddSlot()
+		.AutoWidth()
+		.VAlign(VAlign_Fill)
+		[
+			SNew(SBox)
+			.Clipping(EWidgetClipping::ClipToBounds)
+			.WidthOverride_Lambda([Columns, bAligned]()
+			{
+				return bAligned ? Columns->GetNameWidth() : FOptionalSize();
+			})
+			[
+				NameArea
+			]
+		];
+
+		if (ValueWidget.IsValid())
 		{
 			RowBox->AddSlot()
 			.AutoWidth()
-			.VAlign(VAlign_Center)
 			[
-				NameArea
+				MakeColumnLine()
 			];
 
-			if (ValueWidget.IsValid())
+			// Value: fills the row (so the reset column lines up at the right edge), unless the group fixes its width
+			const bool bFixedValueWidth = bAligned && Columns->GetValueWidth().IsSet();
+
+			TSharedRef<SWidget> ValueCell = SNew(SBox)
+				.WidthOverride_Lambda([Columns, bAligned]()
+				{
+					return bAligned ? Columns->GetValueWidth() : FOptionalSize();
+				})
+				.HAlign(HAlign_Fill)
+				.VAlign(VAlign_Center)
+				.Padding(FMargin(12, RowVerticalPadding, 4, RowVerticalPadding))
+				[
+					ValueWidget.ToSharedRef()
+				];
+
+			if (bFixedValueWidth)
 			{
 				RowBox->AddSlot()
 				.AutoWidth()
-				.VAlign(VAlign_Center)
 				[
-					ValueWidget.ToSharedRef()
+					ValueCell
+				];
+			}
+			else
+			{
+				RowBox->AddSlot()
+				.FillWidth(1.0f)
+				[
+					ValueCell
 				];
 			}
 		}
-
-		if (Handle.IsValid() && Handle->IsValidHandle() && Handle->GetProperty())
+		else
 		{
+			// Whole-row widgets span the name and value columns
 			RowBox->AddSlot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(4, 0, 0, 0)
+			.FillWidth(1.0f)
 			[
-				MakeResetToDefaultButton(Handle.ToSharedRef(), Row)
+				SNullWidget::NullWidget
 			];
 		}
 
-		TSharedRef<SWidget> RowWidget = RowBox;
+		// Reset to default; always there (even if empty) so the column stays aligned
+		RowBox->AddSlot()
+		.AutoWidth()
+		[
+			MakeColumnLine()
+		];
+
+		const bool bHasResetButton = Handle.IsValid() && Handle->IsValidHandle() && Handle->GetProperty();
+
+		RowBox->AddSlot()
+		.AutoWidth()
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::Get().GetBrush("DetailsView.CategoryMiddle"))
+			.BorderBackgroundColor_Lambda([IsRowHovered]()
+			{
+				return GetRowBackgroundColor(0, IsRowHovered.Get());
+			})
+			.Padding(0.0f)
+			.HAlign(HAlign_Center)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SBox)
+				.WidthOverride(ResetColumnWidth)
+				.HAlign(HAlign_Center)
+				[
+					bHasResetButton ? MakeResetToDefaultButton(Handle.ToSharedRef(), Row) : SNullWidget::NullWidget
+				]
+			]
+		];
+
+		TSharedRef<SBorder> RowLine = SNew(SBorder)
+			.BorderImage(FAppStyle::Get().GetBrush("DetailsView.GridLine"))
+			.Padding(FMargin(0, 0, 0, 1))
+			[
+				SNew(SBox)
+				.MinDesiredHeight(RowMinHeight)
+				[
+					SNew(SBorder)
+					.BorderImage(FAppStyle::Get().GetBrush("DetailsView.CategoryMiddle"))
+					.BorderBackgroundColor_Lambda([IsRowHovered, Depth]()
+					{
+						return GetRowBackgroundColor(Depth, IsRowHovered.Get());
+					})
+					.Padding(0.0f)
+					[
+						RowBox
+					]
+				]
+			];
+
+		*HoverSource = RowLine;
+
+		// The row's own line, then its child rows (structs, arrays), which are rows of their own
+		TSharedRef<SVerticalBox> RowWidget = SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				RowLine
+			];
 
 		if (ChildContainer.IsValid())
 		{
-			RowWidget = SNew(SVerticalBox)
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				[
-					RowBox
-				]
-				+ SVerticalBox::Slot()
-				.AutoHeight()
-				[
-					ChildContainer.ToSharedRef()
-				];
+			RowWidget->AddSlot()
+			.AutoHeight()
+			[
+				ChildContainer.ToSharedRef()
+			];
 		}
 
 		return SNew(SBox)

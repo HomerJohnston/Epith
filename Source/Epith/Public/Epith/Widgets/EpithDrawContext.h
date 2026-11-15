@@ -24,6 +24,8 @@ struct FEpithSlotActions
  * Implemented by the panel designer (the panel definition's asset editor). Elements reach it through FEpithDrawContext
  * to add design-time widgets. In the level viewport there is no designer and elements draw exactly as before.
  */
+class FEpithColumnLayout;
+
 class IEpithDesigner
 {
 public:
@@ -40,6 +42,9 @@ public:
 
 	/** A dropdown for picking a property path on the panel's target class. OnPicked runs in a transaction. */
 	virtual TSharedRef<SWidget> MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked) = 0;
+	
+	/** Drag handles over a property row's column lines, which resize the group's columns. Laid over the row's preview. */
+	virtual TSharedRef<SWidget> MakeColumnHandles(const TSharedRef<FEpithColumnLayout>& Columns) = 0;
 };
 
 /**
@@ -49,7 +54,18 @@ public:
 class FEpithColumnLayout
 {
 public:
-	EPITH_API explicit FEpithColumnLayout(float InFixedNameWidth = 0.0f, float InFixedValueWidth = 0.0f);
+	/** Row geometry shared by the rows and the designer's column handles: | Name | Value | Reset |, with 1px lines between. */
+	static constexpr float LineWidth = 1.0f;
+	static constexpr float ResetColumnWidth = 24.0f;
+	
+	/** @param InSourceSettings The group's saved settings these widths came from; the designer's column handles write to them. */
+	EPITH_API explicit FEpithColumnLayout(float InFixedNameWidth = 0.0f, float InFixedValueWidth = 0.0f, const FEpithColumnSettings* InSourceSettings = nullptr);
+	
+	/** Live width changes while a designer column handle is dragged (saved to the settings when the drag ends). 0 = automatic. */
+	void SetFixedNameWidth(float Width) { FixedNameWidth = Width; }
+	void SetFixedValueWidth(float Width) { FixedValueWidth = Width; }
+	
+	const FEpithColumnSettings* GetSourceSettings() const { return SourceSettings; }
 
 	/** Rows add their name area (indent, expander, edit-condition toggle, name) so the automatic width can fit the widest one. */
 	EPITH_API void RegisterNameArea(const TSharedRef<SWidget>& NameArea);
@@ -59,7 +75,7 @@ public:
 
 	/** The fixed value width if one is set, otherwise unset (each value takes what it needs). */
 	EPITH_API FOptionalSize GetValueWidth() const;
-	
+
 	/**
 	 * Call right after building new rows (a panel, or a row's expanded children). Measures the new widgets now, so the automatic
 	 * name width is right on the very first frame they're shown instead of settling a frame later (a visible flicker).
@@ -71,6 +87,8 @@ public:
 private:
 	float FixedNameWidth = 0.0f;
 	float FixedValueWidth = 0.0f;
+	
+	const FEpithColumnSettings* SourceSettings = nullptr;
 
 	TArray<TWeakPtr<SWidget>> NameAreas;
 
@@ -78,7 +96,7 @@ private:
 	mutable uint64 CachedFrame = MAX_uint64;
 	mutable uint64 CachedGeneration = MAX_uint64;
 	mutable float CachedNameWidth = 0.0f;
-	
+
 	/** Bumped by MeasureNow so cached widths from this frame are worked out again with the new measurements. */
 	static uint64 Generation;
 };
