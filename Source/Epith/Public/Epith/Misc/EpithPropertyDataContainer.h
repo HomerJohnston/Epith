@@ -7,7 +7,8 @@
 struct FEpithPropertyDataContainer
 {
 public:
-	FEpithPropertyDataContainer(UObject* InTarget);
+	/** @param InExpandedPaths Which rows are expanded. Pass the same set to each rebuilt container so expansion survives rebuilds. */
+	FEpithPropertyDataContainer(UObject* InTarget, TSharedPtr<TSet<FName>> InExpandedPaths = nullptr);
 
 	~FEpithPropertyDataContainer();
 	
@@ -21,10 +22,63 @@ protected:
 	
 	/** Paths whose widgets have been handed out. A row's widgets can only be shown once per container. */
 	TSet<FName> ClaimedPaths;
+	
+	/** Like ClaimedPaths, but for rows drawn as children of an expanded struct/array. These are released when that row redraws its children. */
+	TSet<FName> ChildClaimedPaths;
+	
+	/** The generator's top-level rows when we built. If a refresh replaces them, everything drawn from us is stale. */
+	TArray<TWeakPtr<IDetailTreeNode>> CachedRootNodes;
+	
+	TSharedPtr<TSet<FName>> ExpandedPaths;
+	
+	void HandleRowsRefreshed();
 
 	void Build(TStrongObjectPtr<UObject> BuildTarget);
+	
+public:
+	/**
+	 * Re-reads the rows from the existing row generator (after OnStructureChanged) and clears all claims, ready for a full redraw.
+	 * Reusing the generator matters: a new generator refreshes once on its first tick, which would start the cycle over.
+	 */
+	void RegatherRows();
+	
+protected:
 
 public:
+	/**
+	 * Broadcast when the row generator refreshed its rows (an array changed size, a row was shown/hidden, ...) but kept its top-level rows.
+	 * Expanded rows use this to check whether their own children changed and redraw just those. Fires during the generator's tick, not during paint.
+	 */
+	FSimpleMulticastDelegate OnRowsRefreshed;
+	
+	/**
+	 * Broadcast when a refresh replaced the generator's top-level rows (rare: e.g. an instanced sub-object was swapped).
+	 * Everything drawn from this container is stale, so the owner should rebuild with a new container.
+	 */
+	FSimpleMulticastDelegate OnStructureChanged;
+	
+	bool IsExpanded(FName Path) const
+	{
+		return ExpandedPaths.IsValid() && ExpandedPaths->Contains(Path);
+	}
+	
+	void SetExpanded(FName Path, bool bExpanded)
+	{
+		if (!ExpandedPaths.IsValid())
+		{
+			ExpandedPaths = MakeShared<TSet<FName>>();
+		}
+		
+		if (bExpanded)
+		{
+			ExpandedPaths->Add(Path);
+		}
+		else
+		{
+			ExpandedPaths->Remove(Path);
+		}
+	}
+	
 	/**
 	 * Returns the property that stops this handle from being edited on placed instances, or null if it's instance-editable.
 	 * That's any property in the chain (the property itself or a struct/container it lives in) flagged CPF_DisableEditOnInstance:
@@ -48,9 +102,41 @@ public:
 	/** Returns true the first time a path is claimed, false afterwards. Use one container per drawn layout. */
 	bool TryClaimPath(FName PropertyPath)
 	{
-		bool bAlreadyClaimed = false;
-		ClaimedPaths.Add(PropertyPath, &bAlreadyClaimed);
-		return !bAlreadyClaimed;
+		if (ClaimedPaths.Contains(PropertyPath) || ChildClaimedPaths.Contains(PropertyPath))
+		{
+			return false;
+		}
+		
+		ClaimedPaths.Add(PropertyPath);
+		return true;
+	}
+	
+	/** Same as TryClaimPath, for rows drawn as children of an expanded row. */
+	bool TryClaimChildPath(FName PropertyPath)
+	{
+		if (ClaimedPaths.Contains(PropertyPath) || ChildClaimedPaths.Contains(PropertyPath))
+		{
+			return false;
+		}
+		
+		ChildClaimedPaths.Add(PropertyPath);
+		return true;
+	}
+	
+	/** Releases child claims nested under ParentPath (e.g. "MyArray[0]", "MyStruct.Value"), before that row redraws its children. */
+	void ReleaseChildClaimsUnder(FName ParentPath)
+	{
+		const FString Parent = ParentPath.ToString();
+		
+		for (auto It = ChildClaimedPaths.CreateIterator(); It; ++It)
+		{
+			const FString Path = It->ToString();
+			
+			if (Path.Len() > Parent.Len() && Path.StartsWith(Parent, ESearchCase::CaseSensitive) && (Path[Parent.Len()] == TEXT('.') || Path[Parent.Len()] == TEXT('[')))
+			{
+				It.RemoveCurrent();
+			}
+		}
 	}
 	
 	TSharedPtr<IPropertyHandle> FindPropertyHandle(FName PropertyPath)

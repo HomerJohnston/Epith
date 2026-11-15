@@ -4,6 +4,7 @@
 #include "Epith/EpithPanelDefinition.h"
 #include "Epith/Style/EpithColor.h"
 #include "Epith/Style/EpithStyle.h"
+#include "Epith/Widgets/EpithDrawContext.h"
 #include "Epith/Widgets/EpithWindowElement.h"
 #include "Epith/Widgets/SEpithViewportObjectPaneHeader.h"
 #include "Styling/SlateIconFinder.h"
@@ -64,17 +65,70 @@ void SEpithViewportObjectPane::OnObjectPropertyChanged(UObject* Object, FPropert
 	}
 }
 
+void SEpithViewportObjectPane::RequestRebuild()
+{
+	if (bRebuildPending)
+	{
+		return;
+	}
+	
+	bRebuildPending = true;
+	
+	// Deferred: this is called from the row generator's tick, possibly while one of our widgets (e.g. an array's "+" button) is mid-click.
+	RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SEpithViewportObjectPane::HandleDeferredRebuild));
+}
+
+EActiveTimerReturnType SEpithViewportObjectPane::HandleDeferredRebuild(double InCurrentTime, float InDeltaTime)
+{
+	bRebuildPending = false;
+	
+	RapidRebuildCount = (InCurrentTime - LastAutoRebuildTime < 0.25) ? RapidRebuildCount + 1 : 0;
+	LastAutoRebuildTime = InCurrentTime;
+	
+	if (RapidRebuildCount == 20)
+	{
+		UE_LOG(LogEpith, Warning, TEXT("Epith panel for [%s] keeps getting row refreshes; ignoring them until things settle."), Target.IsValid() ? *Target->GetName() : TEXT("?"));
+	}
+	
+	if (RapidRebuildCount >= 20)
+	{
+		return EActiveTimerReturnType::Stop;
+	}
+	
+	// Let go of the old widgets first: rows the refresh kept will hand out the same widget instances again.
+	ChildSlot
+	[
+		SNullWidget::NullWidget
+	];
+	
+	// Keep the same row generator: re-read its new rows and redraw
+	if (PropertyData.IsValid())
+	{
+		PropertyData->RegatherRows();
+	}
+	
+	Draw();
+	
+	return EActiveTimerReturnType::Stop;
+}
+
 void SEpithViewportObjectPane::Build()
 {
-	TSharedPtr<SWidget> Content;
-	
 	// Always start from fresh property rows: a row's widgets can only be shown once, and the old ones belong to the tree we're replacing.
 	PropertyData.Reset();
 	
 	if (Target.IsValid())
 	{
-		PropertyData = MakeShared<FEpithPropertyDataContainer>(Target.Get());
+		PropertyData = MakeShared<FEpithPropertyDataContainer>(Target.Get(), ExpandedPaths);
+		PropertyData->OnStructureChanged.AddSP(this, &SEpithViewportObjectPane::RequestRebuild);
 	}
+	
+	Draw();
+}
+
+void SEpithViewportObjectPane::Draw()
+{
+	TSharedPtr<SWidget> Content;
 
 	if (!Target.IsValid())
 	{
@@ -86,7 +140,7 @@ void SEpithViewportObjectPane::Build()
 	}
 	else
 	{
-		Content = PanelDefinition->GetRoot()->Get<FEpithWindowElement>().Draw(PropertyData);
+		Content = EpithDraw::DrawSlot(*PanelDefinition->GetRoot(), FEpithDrawContext(PropertyData));
 
 		if (!Content.IsValid())
 		{

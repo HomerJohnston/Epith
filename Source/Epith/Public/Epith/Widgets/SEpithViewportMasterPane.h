@@ -52,6 +52,12 @@ class SEpithViewportMasterPane : public SCompoundWidget
 
 	/** Offset for the canvas slot, in canvas-local units. */
 	FMargin GetOffset() const;
+	
+	/**
+	 * The normal arrow over the whole panel, instead of the viewport's crosshair showing through.
+	 * Widgets inside that want their own cursor (text boxes, the header's move cursor) still get it, because Slate asks them first.
+	 */
+	FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override;
 
 	/** The actor's label (or the object's name), shown in the header. */
 	FText GetTitle() const;

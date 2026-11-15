@@ -13,6 +13,7 @@ class EPITH_API UEpithPanelDefinition : public UObject
 	GENERATED_BODY()
 	
 	friend class FPropertyTypeCustomization_EpithPropertySelector;
+	friend struct FEpithTestAccess; // Automation tests (Private/Epith/Tests)
 	
 protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Epith", meta = (AllowAbstract))
@@ -55,6 +56,12 @@ public:
 		return nullptr;
 	}
 
+	/** The root slot, for the panel designer to edit in place (wrap changes in a transaction and call Modify() first). */
+	TInstancedStruct<FEpithWindowElement>& GetRootForEditing()
+	{
+		return Root;
+	}
+
 	bool HasRoot() const
 	{
 		if (!Root.IsValid())
@@ -93,6 +100,9 @@ public:
 
 		return Categories;
 	}
+	
+	/** Opens the Epith panel editor (Details + panel designer). */
+	EAssetCommandResult OpenAssets(const FAssetOpenArgs& OpenArgs) const override;
 };
 
 UCLASS()

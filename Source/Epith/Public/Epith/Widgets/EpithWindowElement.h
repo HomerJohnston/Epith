@@ -4,7 +4,7 @@
 
 #include "EpithWindowElement.generated.h"
 
-struct FEpithPropertyDataContainer;
+struct FEpithDrawContext;
 
 USTRUCT()
 struct FEpithWindowElement_BoxDisplayParams
@@ -23,5 +23,6 @@ struct FEpithWindowElement
 {
 	GENERATED_BODY()
 
-	virtual TSharedPtr<SWidget> Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const { return nullptr; }
+	/** Builds this element's widget. Use EpithDraw::DrawSlot (EpithDrawContext.h) to draw child slots. */
+	virtual TSharedPtr<SWidget> Draw(const FEpithDrawContext& Context) const { return nullptr; }
 };

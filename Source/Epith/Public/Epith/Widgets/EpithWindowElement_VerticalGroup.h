@@ -23,7 +23,7 @@ struct FEpithWindowElement_VerticalGroup : public FEpithWindowElement
 
 	virtual ~FEpithWindowElement_VerticalGroup() {}
 	
-	TSharedPtr<SWidget> Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const override;
+	TSharedPtr<SWidget> Draw(const FEpithDrawContext& Context) const override;
 	
 	UPROPERTY(EditDefaultsOnly, DisplayName = "Vertical Group Slots", meta = (ExcludeBaseStruct))
 	TArray<FEpithWindowElement_VerticalGroup_Slot> Slots;

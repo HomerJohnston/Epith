@@ -14,5 +14,5 @@ struct FEpithWindowElement_Property : public FEpithWindowElement
 	UPROPERTY(EditDefaultsOnly)
 	FEpithPropertySelector PropertySelector;
 	
-	TSharedPtr<SWidget> Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const override;
+	TSharedPtr<SWidget> Draw(const FEpithDrawContext& Context) const override;
 };

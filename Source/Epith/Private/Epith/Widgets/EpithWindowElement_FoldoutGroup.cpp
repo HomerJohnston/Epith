@@ -1,15 +1,11 @@
 ﻿#include "Epith/Widgets/EpithWindowElement_FoldoutGroup.h"
 
 #include "Epith/Style/EpithColor.h"
+#include "Epith/Widgets/EpithDrawContext.h"
 
-TSharedPtr<SWidget> FEpithWindowElement_FoldoutGroup::Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const
+TSharedPtr<SWidget> FEpithWindowElement_FoldoutGroup::Draw(const FEpithDrawContext& Context) const
 {
-	TSharedPtr<SWidget> ElementWidget = nullptr;
-	
-	if (Element.IsValid())
-	{
-		ElementWidget = Element.Get<FEpithWindowElement>().Draw(InPropertyData);
-	}
+	TSharedPtr<SWidget> ElementWidget = EpithDraw::DrawSlot(Element, Context);
 	
 	if (!ElementWidget.IsValid())
 	{

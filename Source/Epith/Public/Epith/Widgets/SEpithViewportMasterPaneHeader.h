@@ -25,4 +25,7 @@ class SEpithViewportMasterPaneHeader : public SCompoundWidget
 	FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
 	
 	void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override;
+	
+	/** The header is the drag handle, so it shows the four-way move cursor. */
+	FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override;
 };

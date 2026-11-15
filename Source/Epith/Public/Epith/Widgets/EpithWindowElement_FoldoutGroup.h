@@ -17,5 +17,5 @@ struct FEpithWindowElement_FoldoutGroup : public FEpithWindowElement
 	UPROPERTY(EditDefaultsOnly, meta = (ShowOnlyInnerProperties, ExcludeBaseStruct))
 	TInstancedStruct<FEpithWindowElement> Element;
 	
-	TSharedPtr<SWidget> Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const override;
+	TSharedPtr<SWidget> Draw(const FEpithDrawContext& Context) const override;
 };

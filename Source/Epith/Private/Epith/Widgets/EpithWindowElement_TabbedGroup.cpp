@@ -1,29 +1,30 @@
 ﻿#include "Epith/Widgets/EpithWindowElement_TabbedGroup.h"
 
+#include "Epith/Widgets/EpithDrawContext.h"
 #include "Epith/Widgets/SEpithTabbedPane.h"
 
-TSharedPtr<SWidget> FEpithWindowElement_TabbedGroup::Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const
+#define LOCTEXT_NAMESPACE "Epith"
+
+TSharedPtr<SWidget> FEpithWindowElement_TabbedGroup::Draw(const FEpithDrawContext& Context) const
 {
-	int32 SlotsNum = Slots.Num();
+	// In the designer, slots are edited in place (see EpithDraw::DrawSlot)
+	TArray<FEpithWindowElement_TabbedGroup_Slot>& MutableSlots = const_cast<TArray<FEpithWindowElement_TabbedGroup_Slot>&>(Slots);
 	
 	TArray<FText> Tabs;
 	TArray<TSharedRef<SWidget>> Panes;
 	
 	for (int32 i = 0; i < Slots.Num(); ++i)
 	{
-		if (!Slots[i].Element.IsValid())
-		{
-			continue;
-		}
-		
 		FText TabText = FText::FromString(Slots[i].TabName);
 		
 		if (TabText.IsEmpty())
 		{
-			TabText = FText::Format(INVTEXT("Tab {0}"), i);
+			TabText = FText::Format(LOCTEXT("TabbedGroup_DefaultTabName", "Tab {0}"), i + 1);
 		}
 		
-		TSharedPtr<SWidget> PaneWidget = Slots[i].Element.Get<FEpithWindowElement>().Draw(InPropertyData);
+		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i) : FEpithSlotActions();
+		
+		TSharedPtr<SWidget> PaneWidget = EpithDraw::DrawSlot(Slots[i].Element, Context, Actions);
 		
 		if (!PaneWidget.IsValid())
 		{
@@ -34,12 +35,43 @@ TSharedPtr<SWidget> FEpithWindowElement_TabbedGroup::Draw(TSharedPtr<FEpithPrope
 		Panes.Add(PaneWidget.ToSharedRef());
 	}
 	
-	if (Panes.Num() == 0)
+	TSharedPtr<SWidget> TabbedPane;
+	
+	if (Panes.Num() > 0)
 	{
-		return nullptr;
+		TabbedPane = SNew(SEpithTabbedPane)
+			.Tabs(Tabs)
+			.Panes(Panes);
 	}
 	
-	return SNew(SEpithTabbedPane)
-		.Tabs(Tabs)
-		.Panes(Panes);
+	if (!Context.IsDesigning())
+	{
+		return TabbedPane;
+	}
+	
+	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
+	
+	if (TabbedPane.IsValid())
+	{
+		Box->AddSlot()
+		.AutoHeight()
+		[
+			TabbedPane.ToSharedRef()
+		];
+	}
+	
+	Box->AddSlot()
+	.AutoHeight()
+	.Padding(4, 2)
+	[
+		Context.Designer->MakeAddButton(LOCTEXT("TabbedGroup_AddTab", "Add Tab"), [SlotsPtr = &MutableSlots]()
+		{
+			FEpithWindowElement_TabbedGroup_Slot& NewSlot = SlotsPtr->AddDefaulted_GetRef();
+			NewSlot.TabName = FString::Printf(TEXT("Tab %d"), SlotsPtr->Num());
+		})
+	];
+	
+	return Box;
 }
+
+#undef LOCTEXT_NAMESPACE

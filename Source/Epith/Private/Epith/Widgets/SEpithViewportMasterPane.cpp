@@ -247,6 +247,11 @@ void SEpithViewportMasterPane::EndDrag()
 	LastPanelLocation = CurrentPanelLocation;
 }
 
+FCursorReply SEpithViewportMasterPane::OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const
+{
+	return FCursorReply::Cursor(EMouseCursor::Default);
+}
+
 FMargin SEpithViewportMasterPane::GetOffset() const
 {
 	// Clamp every frame too, so the pane stays on screen when the viewport is resized

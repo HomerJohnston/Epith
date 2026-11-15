@@ -30,6 +30,7 @@ void SEpithViewportMasterPaneHeader::Construct(const FArguments InArgs)
 				.Padding(0, 0, 0, 0)
 				[
 					SNew(SButton)
+					.Cursor(EMouseCursor::Default) // A normal arrow over the close button, not the header's move cursor
 					.ToolTipText(LOCTEXT("ViewportPropertyEditor_CloseButton", "Close")) // TODO it'd be nice to properly support OK/CANCEL ... bit of a major change, would have to make a dummy copy and reflect it back into the source
 					.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
 					.ContentPadding(8)
@@ -100,6 +101,11 @@ FReply SEpithViewportMasterPaneHeader::OnMouseButtonUp(const FGeometry& MyGeomet
 	}
 	
 	return FReply::Handled().ReleaseMouseCapture();
+}
+
+FCursorReply SEpithViewportMasterPaneHeader::OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const
+{
+	return FCursorReply::Cursor(EMouseCursor::CardinalCross);
 }
 
 void SEpithViewportMasterPaneHeader::OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent)

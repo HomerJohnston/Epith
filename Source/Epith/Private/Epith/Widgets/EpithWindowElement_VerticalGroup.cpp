@@ -2,9 +2,15 @@
 
 #include "Epith/Style/EpithColor.h"
 #include "Epith/Style/EpithStyle.h"
+#include "Epith/Widgets/EpithDrawContext.h"
 
-TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(TSharedPtr<FEpithPropertyDataContainer> InPropertyData) const
+#define LOCTEXT_NAMESPACE "Epith"
+
+TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawContext& Context) const
 {
+	// In the designer, slots are edited in place (see EpithDraw::DrawSlot)
+	TArray<FEpithWindowElement_VerticalGroup_Slot>& MutableSlots = const_cast<TArray<FEpithWindowElement_VerticalGroup_Slot>&>(Slots);
+	
 	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
 	
 	int32 SlotsNum = Slots.Num();
@@ -13,14 +19,9 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(TSharedPtr<FEpithPro
 	{
 		const FEpithWindowElement_VerticalGroup_Slot& Slot = Slots[i];
 		
-		const TInstancedStruct<FEpithWindowElement>& Child = Slot.Child;
+		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i) : FEpithSlotActions();
 		
-		if (!Child.IsValid())
-		{
-			continue;
-		}
-		
-		TSharedPtr<SWidget> Widget = Child.Get<FEpithWindowElement>().Draw(InPropertyData);
+		TSharedPtr<SWidget> Widget = EpithDraw::DrawSlot(Slot.Child, Context, Actions);
 		
 		if (!Widget.IsValid())
 		{
@@ -41,5 +42,20 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(TSharedPtr<FEpithPro
 		];
 	}
 	
+	if (Context.IsDesigning())
+	{
+		Box->AddSlot()
+		.AutoHeight()
+		.Padding(4, 2)
+		[
+			Context.Designer->MakeAddButton(LOCTEXT("VerticalGroup_Add", "Add"), [SlotsPtr = &MutableSlots]()
+			{
+				SlotsPtr->AddDefaulted();
+			})
+		];
+	}
+	
 	return Box;
 }
+
+#undef LOCTEXT_NAMESPACE

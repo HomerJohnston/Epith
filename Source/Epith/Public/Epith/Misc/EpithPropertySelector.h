@@ -12,6 +12,7 @@ struct FEpithPropertySelector
 	GENERATED_BODY()
 
 	friend class FPropertyTypeCustomization_EpithPropertySelector;
+	friend struct FEpithTestAccess; // Automation tests (Private/Epith/Tests)
 	
 protected:
 	UPROPERTY(EditAnywhere)
@@ -19,4 +20,9 @@ protected:
 
 public:
 	FName GetPropertyPath() const;
+	
+	void SetPropertyPath(FName InPropertyPath)
+	{
+		PropertyPath = InPropertyPath;
+	}
 };
