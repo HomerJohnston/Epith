@@ -16,13 +16,11 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 
 	TSharedRef<SHorizontalBox> Box = SNew(SHorizontalBox);
 
-	int32 SlotsNum = Slots.Num();
-
 	for (int32 i = 0; i < Slots.Num(); ++i)
 	{
 		const FEpithWindowElement_HorizontalGroup_Slot& Slot = Slots[i];
 
-		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i) : FEpithSlotActions();
+		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i, StaticStruct()->GetDisplayNameText(), EEpithSlotMoveArrows::LeftRight) : FEpithSlotActions();
 
 		TSharedPtr<SWidget> Widget = EpithDraw::DrawSlot(Slot.Child, ChildContext, Actions);
 
@@ -31,13 +29,13 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 			continue;
 		}
 
+		// The slot's own Padding setting is the only spacing (same as the Vertical Group)
 		Box->AddSlot()
 		.AutoWidth()
-		.Padding(4, 4, i == SlotsNum - 1 ? 4 : 0, 4)
 		[
 			SNew(SBorder)
-			.Padding(Slot.DisplayParams.Padding)
-			.BorderImage(Slot.DisplayParams.bBorder ? FEpithStyle::GetImageBrush(EpithBrushes.Border_2px_Deburred) : FAppStyle::GetBrush("NoBorder"))
+			.Padding(FMargin(Slot.DisplayParams.Padding) + FEpithStyle::GetBorderPadding(Slot.DisplayParams.Border, false))
+			.BorderImage(FEpithStyle::GetBorderBrush(Slot.DisplayParams.Border, false))
 			.BorderBackgroundColor(EpithColor::Noir)
 			[
 				Widget.ToSharedRef()
@@ -47,11 +45,14 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 
 	if (Context.IsDesigning())
 	{
+		// Fills the leftover width so the button sits at the right end of the row
 		Box->AddSlot()
-		.AutoWidth()
+		.FillWidth(1.0f)
+		.HAlign(HAlign_Right)
+		.VAlign(VAlign_Center)
 		.Padding(4, 2)
 		[
-			Context.Designer->MakeAddButton(LOCTEXT("HorizontalGroup_Add", "+ to Horizontal Group"), [SlotsPtr = &MutableSlots]()
+			Context.Designer->MakeAddButton(LOCTEXT("HorizontalGroup_Add", "Add Slot to Horizontal Group"), [SlotsPtr = &MutableSlots]()
 			{
 				SlotsPtr->AddDefaulted();
 			})

@@ -58,6 +58,9 @@ protected:
 	/** Menu for an element: nest in a container, clear, remove from group, move up/down. */
 	TSharedRef<SWidget> MakeElementMenu(TInstancedStruct<FEpithWindowElement>* Slot, const FEpithSlotActions& Actions);
 
+	/** Puts the slot's move buttons (two small arrows, stacked) to the left of Content, if its group wants them. */
+	TSharedRef<SWidget> WithMoveButtons(TSharedRef<SWidget> Content, const FEpithSlotActions& Actions);
+
 	/** Menu for an empty slot: pick an element type. */
 	TSharedRef<SWidget> MakeElementTypeMenu(TInstancedStruct<FEpithWindowElement>* Slot);
 
@@ -71,7 +74,7 @@ protected:
 	TSharedPtr<FEpithPropertyDataContainer> PreviewData;
 
 	bool bRedrawPending = false;
-	
+
 	/**
 	 * The add button a group just made, waiting for that group's frame. A group makes its add button after drawing its children,
 	 * so the next WrapElement call is always for that group. While the button is hovered, the group's outline is emphasized.

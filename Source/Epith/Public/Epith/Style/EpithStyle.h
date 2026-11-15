@@ -14,10 +14,14 @@
 
 struct FEpithBrushes
 {
+	// Borders: thin (2px) and thick (3px), as a box or U-shaped (open at the top, for under a foldout bar or tab bar)
 	FName Border_2px_Deburred;
+	FName Border_3px_Deburred;
+	FName Border_2px_Deburred_U;
+	FName Border_3px_Deburred_U;
 	FName Border_TabShape;
 	FName Background_ViewportMasterPanelHeader;
-	
+
 	FName Background_WhiteSquare;
 };
 
@@ -29,6 +33,10 @@ struct FEpithStyles
 
 struct FEpithFonts
 {
+	/** The title of the whole panel, in its header bar. */
+	FSlateFontInfo Font_ViewportPopup_PanelTitle;
+
+	/** Section titles inside the panel (one per object). */
 	FSlateFontInfo Font_ViewportPopup_Title;
 };
 
@@ -39,16 +47,22 @@ extern FEpithFonts EpithFonts;
 class FEpithStyle
 {
 public:
-    
+
 public:
     FEpithStyle();
-	
+
     virtual ~FEpithStyle();
-	
+
 public:
     static ISlateStyle& Get();
 
     static const FSlateBrush* GetImageBrush(FName BrushName);
+
+    /** The border brush for a Border setting (0 = none, 1 = thin, 2 = thick). bOpenTop gives the U-shaped version. */
+    static const FSlateBrush* GetBorderBrush(uint8 Border, bool bOpenTop);
+
+    /** Padding that keeps content inside that border (none at the top when bOpenTop). */
+    static FMargin GetBorderPadding(uint8 Border, bool bOpenTop);
 
     static FName GetStyleSetName();
 
@@ -57,16 +71,16 @@ public:
 
     /** Unregisters and destroys the style set. Called from FEpithModule::ShutdownModule. */
     static void Shutdown();
-	
+
 protected:
     static TSharedRef< class FSlateStyleSet > Create();
-	
+
     static void SetupStyles();
-	
+
     static void OnPatchComplete();
 
     static const ISlateStyle* GetParentStyle();
-	
+
     static TArray<TStrongObjectPtr<UTexture2D>> Textures;
 
     static FDelegateHandle OnPatchCompleteHandle;

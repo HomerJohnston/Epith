@@ -2,6 +2,7 @@
 
 #include "Epith/Widgets/EpithDrawContext.h"
 #include "Epith/Widgets/SEpithTabbedPane.h"
+#include "Widgets/Layout/SBox.h"
 
 #define LOCTEXT_NAMESPACE "Epith"
 
@@ -25,7 +26,7 @@ TSharedPtr<SWidget> FEpithWindowElement_TabbedGroup::Draw(const FEpithDrawContex
 			TabText = FText::Format(LOCTEXT("TabbedGroup_DefaultTabName", "Tab {0}"), i + 1);
 		}
 
-		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i) : FEpithSlotActions();
+		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i, StaticStruct()->GetDisplayNameText()) : FEpithSlotActions();
 
 		TSharedPtr<SWidget> PaneWidget = EpithDraw::DrawSlot(Slots[i].Element, ChildContext, Actions);
 
@@ -38,43 +39,59 @@ TSharedPtr<SWidget> FEpithWindowElement_TabbedGroup::Draw(const FEpithDrawContex
 		Panes.Add(PaneWidget.ToSharedRef());
 	}
 
-	TSharedPtr<SWidget> TabbedPane;
+	// Designer: an add button to the right of the tabs (or on its own while there are no tabs yet)
+	TSharedPtr<SWidget> AddButton;
 
-	if (Panes.Num() > 0)
+	if (Context.IsDesigning())
 	{
-		TabbedPane = SNew(SEpithTabbedPane)
-			.Tabs(Tabs)
-			.Panes(Panes);
-	}
-
-	if (!Context.IsDesigning())
-	{
-		return TabbedPane;
-	}
-
-	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
-
-	if (TabbedPane.IsValid())
-	{
-		Box->AddSlot()
-		.AutoHeight()
-		[
-			TabbedPane.ToSharedRef()
-		];
-	}
-
-	Box->AddSlot()
-	.AutoHeight()
-	.Padding(4, 2)
-	[
-		Context.Designer->MakeAddButton(LOCTEXT("TabbedGroup_AddTab", "+ to Tabbed Group"), [SlotsPtr = &MutableSlots]()
+		AddButton = Context.Designer->MakeAddButton(LOCTEXT("TabbedGroup_AddTab", "Add Slot to Tabbed Group"), [SlotsPtr = &MutableSlots]()
 		{
 			FEpithWindowElement_TabbedGroup_Slot& NewSlot = SlotsPtr->AddDefaulted_GetRef();
 			NewSlot.TabName = FString::Printf(TEXT("Tab %d"), SlotsPtr->Num());
-		})
-	];
+		});
+	}
 
-	return Box;
+	if (Panes.Num() > 0)
+	{
+		// The gap between the tabs and the add button belongs to the button, so the real panel's tabs reach the right edge
+		TSharedPtr<SWidget> TabBarExtra;
+
+		if (AddButton.IsValid())
+		{
+			TabBarExtra = SNew(SBox)
+				.Padding(4, 0, 0, 0)
+				[
+					AddButton.ToSharedRef()
+				];
+		}
+
+		return SNew(SEpithTabbedPane)
+			.Border(Border)
+			.Tabs(Tabs)
+			.Panes(Panes)
+			.TabBarExtra(TabBarExtra);
+	}
+
+	if (AddButton.IsValid())
+	{
+		return SNew(SBox)
+			.HAlign(HAlign_Right)
+			.Padding(4, 2)
+			[
+				AddButton.ToSharedRef()
+			];
+	}
+
+	return nullptr;
+}
+
+void FEpithWindowElement_TabbedGroup::PostSerialize(const FArchive& Ar)
+{
+	if (Ar.IsLoading() && bBorder_DEPRECATED)
+	{
+		Border = 1;
+		bBorder_DEPRECATED = false;
+	}
 }
 
 #undef LOCTEXT_NAMESPACE

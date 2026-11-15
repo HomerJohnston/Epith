@@ -13,8 +13,26 @@ class SWidget;
  * Edits a slot's owner (a group) can offer for that slot in the designer. Unset functions aren't offered.
  * Each one changes the panel definition directly; the designer runs them inside an undoable transaction.
  */
+/** Which move buttons the designer shows beside a slot. */
+enum class EEpithSlotMoveArrows : uint8
+{
+	None,
+	
+	/** Up/down arrows, for slots stacked vertically. */
+	UpDown,
+	
+	/** Left/right arrows, for slots laid out in a row. */
+	LeftRight,
+};
+
 struct FEpithSlotActions
 {
+	/** Move buttons the designer shows to the left of the slot (MoveUp/MoveDown move it). */
+	EEpithSlotMoveArrows MoveArrows = EEpithSlotMoveArrows::None;
+	
+	/** The group the slot belongs to, for tooltips (e.g. "Vertical Group"). */
+	FText ParentName;
+
 	TFunction<void()> Remove;
 	TFunction<void()> MoveUp;
 	TFunction<void()> MoveDown;
@@ -37,12 +55,12 @@ public:
 	/** Wraps an element's widget with a hover outline and a menu (nest in a container, clear, remove, move). */
 	virtual TSharedRef<SWidget> WrapElement(TInstancedStruct<FEpithWindowElement>& Slot, TSharedRef<SWidget> ElementWidget, const FEpithSlotActions& Actions) = 0;
 
-	/** A small "+" button that runs AddSlot in a transaction, e.g. at the end of a group. */
+	/** A "+" icon button that runs AddSlot in a transaction, e.g. at the end of a group. Label is its tooltip. */
 	virtual TSharedRef<SWidget> MakeAddButton(const FText& Label, TFunction<void()> AddSlot) = 0;
 
 	/** A dropdown for picking a property path on the panel's target class. OnPicked runs in a transaction. */
 	virtual TSharedRef<SWidget> MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked) = 0;
-	
+
 	/** Drag handles over a property row's column lines, which resize the group's columns. Laid over the row's preview. */
 	virtual TSharedRef<SWidget> MakeColumnHandles(const TSharedRef<FEpithColumnLayout>& Columns) = 0;
 };
@@ -57,14 +75,14 @@ public:
 	/** Row geometry shared by the rows and the designer's column handles: | Name | Value | Reset |, with 1px lines between. */
 	static constexpr float LineWidth = 1.0f;
 	static constexpr float ResetColumnWidth = 24.0f;
-	
+
 	/** @param InSourceSettings The group's saved settings these widths came from; the designer's column handles write to them. */
 	EPITH_API explicit FEpithColumnLayout(float InFixedNameWidth = 0.0f, float InFixedValueWidth = 0.0f, const FEpithColumnSettings* InSourceSettings = nullptr);
-	
+
 	/** Live width changes while a designer column handle is dragged (saved to the settings when the drag ends). 0 = automatic. */
 	void SetFixedNameWidth(float Width) { FixedNameWidth = Width; }
 	void SetFixedValueWidth(float Width) { FixedValueWidth = Width; }
-	
+
 	const FEpithColumnSettings* GetSourceSettings() const { return SourceSettings; }
 
 	/** Rows add their name area (indent, expander, edit-condition toggle, name) so the automatic width can fit the widest one. */
@@ -87,7 +105,7 @@ public:
 private:
 	float FixedNameWidth = 0.0f;
 	float FixedValueWidth = 0.0f;
-	
+
 	const FEpithColumnSettings* SourceSettings = nullptr;
 
 	TArray<TWeakPtr<SWidget>> NameAreas;
@@ -141,9 +159,11 @@ namespace EpithDraw
 
 	/** Remove / move up / move down for entry Index of a group's slot array. */
 	template<typename SlotType>
-	FEpithSlotActions MakeArraySlotActions(TArray<SlotType>& Slots, int32 Index)
+	FEpithSlotActions MakeArraySlotActions(TArray<SlotType>& Slots, int32 Index, const FText& ParentName = FText(), EEpithSlotMoveArrows MoveArrows = EEpithSlotMoveArrows::None)
 	{
 		FEpithSlotActions Actions;
+		Actions.ParentName = ParentName;
+		Actions.MoveArrows = MoveArrows;
 		TArray<SlotType>* SlotsPtr = &Slots;
 
 		Actions.Remove = [SlotsPtr, Index]()

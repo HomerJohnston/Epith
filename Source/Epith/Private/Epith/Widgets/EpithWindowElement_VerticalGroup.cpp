@@ -20,7 +20,7 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 	{
 		const FEpithWindowElement_VerticalGroup_Slot& Slot = Slots[i];
 
-		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i) : FEpithSlotActions();
+		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i, StaticStruct()->GetDisplayNameText(), EEpithSlotMoveArrows::UpDown) : FEpithSlotActions();
 
 		TSharedPtr<SWidget> Widget = EpithDraw::DrawSlot(Slot.Child, ChildContext, Actions);
 
@@ -34,8 +34,8 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 		.AutoHeight()
 		[
 			SNew(SBorder)
-			.Padding(Slot.DisplayParams.Padding)
-			.BorderImage(Slot.DisplayParams.bBorder ? FEpithStyle::GetImageBrush(EpithBrushes.Border_2px_Deburred) : FAppStyle::GetBrush("NoBorder"))
+			.Padding(FMargin(Slot.DisplayParams.Padding) + FEpithStyle::GetBorderPadding(Slot.DisplayParams.Border, false))
+			.BorderImage(FEpithStyle::GetBorderBrush(Slot.DisplayParams.Border, false))
 			.BorderBackgroundColor(EpithColor::Noir_SemiTrans)
 			[
 				Widget.ToSharedRef()
@@ -47,9 +47,10 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 	{
 		Box->AddSlot()
 		.AutoHeight()
+		.HAlign(HAlign_Right)
 		.Padding(4, 2)
 		[
-			Context.Designer->MakeAddButton(LOCTEXT("VerticalGroup_Add", "+ to Vertical Group"), [SlotsPtr = &MutableSlots]()
+			Context.Designer->MakeAddButton(LOCTEXT("VerticalGroup_Add", "Add Slot to Vertical Group"), [SlotsPtr = &MutableSlots]()
 			{
 				SlotsPtr->AddDefaulted();
 			})

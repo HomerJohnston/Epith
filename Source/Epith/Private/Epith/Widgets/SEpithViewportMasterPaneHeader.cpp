@@ -8,7 +8,7 @@
 void SEpithViewportMasterPaneHeader::Construct(const FArguments InArgs)
 {
 	ParentPtr = InArgs._Parent;
-	
+
 	ChildSlot
 	[
 		SNew(SBox)
@@ -21,9 +21,11 @@ void SEpithViewportMasterPaneHeader::Construct(const FArguments InArgs)
 				SNew(SHorizontalBox)
 				+ SHorizontalBox::Slot()
 				.HAlign(HAlign_Left)
+				.VAlign(VAlign_Center)
 				[
 					SNew(STextBlock)
-					.Text(InArgs._Title)	
+					.Text(InArgs._Title)
+					.Font(EpithFonts.Font_ViewportPopup_PanelTitle)
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
@@ -60,16 +62,16 @@ FReply SEpithViewportMasterPaneHeader::OnMouseButtonDown(const FGeometry& MyGeom
 	{
 		return FReply::Unhandled();
 	}
-	
+
 	TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin();
-	
+
 	if (!PinnedParent.IsValid())
 	{
 		return FReply::Unhandled();
 	}
-	
+
 	PinnedParent->BeginDrag(MouseEvent.GetScreenSpacePosition());
-	
+
 	return FReply::Handled().CaptureMouse(SharedThis(this));
 }
 
@@ -79,12 +81,12 @@ FReply SEpithViewportMasterPaneHeader::OnMouseMove(const FGeometry& MyGeometry, 
 	{
 		return FReply::Unhandled();
 	}
-	
+
 	if (TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin())
 	{
 		PinnedParent->UpdateDrag(MouseEvent.GetScreenSpacePosition());
 	}
-	
+
 	return FReply::Handled();
 }
 
@@ -94,12 +96,12 @@ FReply SEpithViewportMasterPaneHeader::OnMouseButtonUp(const FGeometry& MyGeomet
 	{
 		return FReply::Unhandled();
 	}
-	
+
 	if (TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin())
 	{
 		PinnedParent->EndDrag();
 	}
-	
+
 	return FReply::Handled().ReleaseMouseCapture();
 }
 

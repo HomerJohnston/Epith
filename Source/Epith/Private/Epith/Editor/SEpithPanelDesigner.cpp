@@ -138,8 +138,8 @@ public:
 		: _bDashed(false)
 		, _bOnlyWhenHovered(false)
 		, _bOutlineContent(false)
-		, _Padding(FMargin(2))
 		, _FillColor(FLinearColor::Transparent)
+		, _Padding(FMargin(2))
 		{}
 
 		SLATE_ARGUMENT(bool, bDashed)
@@ -493,7 +493,6 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 
 	TSharedRef<SHorizontalBox> Row = SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot()
-		.AutoWidth()
 		.VAlign(VAlign_Center)
 		[
 			SNew(SComboButton)
@@ -506,7 +505,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 			.ButtonContent()
 			[
 				SNew(STextBlock)
-				.Text(LOCTEXT("EmptySlot_Choose", "Choose element..."))
+				.Text(LOCTEXT("EmptySlot_Choose", "Pick container..."))
 			]
 		];
 
@@ -522,7 +521,9 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 			SNew(SButton)
 			.ButtonStyle(FAppStyle::Get(), "SimpleButton")
 			.ContentPadding(2)
-			.ToolTipText(LOCTEXT("EmptySlot_Remove", "Remove this slot"))
+			.ToolTipText(Actions.ParentName.IsEmpty()
+				? LOCTEXT("EmptySlot_Remove", "Remove Slot")
+				: FText::Format(LOCTEXT("EmptySlot_RemoveFrom", "Remove Slot from {0}"), Actions.ParentName))
 			.OnClicked_Lambda([this, Remove]()
 			{
 				Edit(LOCTEXT("EmptySlot_RemoveTransaction", "Remove Slot"), Remove);
@@ -537,13 +538,15 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 	}
 
 	// Unassigned slots are tinted a faint yellow, so they stand out as still to be filled in
-	return SNew(SEpithDesignerFrame)
+	TSharedRef<SWidget> Frame = SNew(SEpithDesignerFrame)
 		.bDashed(true)
 		.FillColor(FLinearColor(1.0f, 0.85f, 0.2f, 0.08f))
 		.Padding(FMargin(8, 6))
 		[
 			Row
 		];
+
+	return WithMoveButtons(Frame, Actions);
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWindowElement>& Slot, TSharedRef<SWidget> ElementWidget, const FEpithSlotActions& Actions)
@@ -555,12 +558,12 @@ TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWind
 	PendingAddButton.Reset();
 
 	// Options are on right-click. The outline shows while hovered.
-	return SNew(SEpithDesignerFrame)
+	TSharedRef<SWidget> Frame = SNew(SEpithDesignerFrame)
 		.bOnlyWhenHovered(true)
 		.bOutlineContent(true)
 		.EmphasizeWhileHovered(AddButton)
 		// Each nesting level is inset a little, so nested outlines don't sit on top of each other
-		.Padding(FMargin(0))
+		.Padding(FMargin(2))
 		.OnGetContextMenu_Lambda([this, SlotPtr, Actions]()
 		{
 			return MakeElementMenu(SlotPtr, Actions);
@@ -568,28 +571,110 @@ TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWind
 		[
 			ElementWidget
 		];
+
+	return WithMoveButtons(Frame, Actions);
+}
+
+TSharedRef<SWidget> SEpithPanelDesigner::WithMoveButtons(TSharedRef<SWidget> Content, const FEpithSlotActions& Actions)
+{
+	if (Actions.MoveArrows == EEpithSlotMoveArrows::None)
+	{
+		return Content;
+	}
+
+	const bool bLeftRight = Actions.MoveArrows == EEpithSlotMoveArrows::LeftRight;
+
+	// A small arrow button; disabled (but still there, so slots stay lined up) when the slot can't move that way
+	auto MakeArrow = [this](FName Icon, const FText& ToolTip, const TFunction<void()>& Move) -> TSharedRef<SWidget>
+	{
+		return SNew(SBox)
+			.WidthOverride(16.0f)
+			.HeightOverride(14.0f)
+			[
+				SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+				.ContentPadding(0)
+				.HAlign(HAlign_Center)
+				.VAlign(VAlign_Center)
+				.IsEnabled(static_cast<bool>(Move))
+				.ToolTipText(ToolTip)
+				.OnClicked_Lambda([this, Move]()
+				{
+					if (Move)
+					{
+						Edit(LOCTEXT("MoveSlotTransaction", "Move Slot"), Move);
+					}
+
+					return FReply::Handled();
+				})
+				[
+					SNew(SImage)
+					.Image(FAppStyle::Get().GetBrush(Icon))
+					.DesiredSizeOverride(FVector2D(12.0f, 12.0f))
+					.ColorAndOpacity(FSlateColor::UseForeground())
+				]
+			];
+	};
+
+	return SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(0, 0, 2, 0)
+		[
+			SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				MakeArrow(bLeftRight ? "Icons.ChevronLeft" : "Icons.ChevronUp",
+					bLeftRight ? LOCTEXT("MoveSlotLeft", "Move Left") : LOCTEXT("MoveSlotUp", "Move Up"),
+					Actions.MoveUp)
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				MakeArrow(bLeftRight ? "Icons.ChevronRight" : "Icons.ChevronDown",
+					bLeftRight ? LOCTEXT("MoveSlotRight", "Move Right") : LOCTEXT("MoveSlotDown", "Move Down"),
+					Actions.MoveDown)
+			]
+		]
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		[
+			Content
+		];
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::MakeAddButton(const FText& Label, TFunction<void()> AddSlot)
 {
+	// A 24x24 button with a centered 16x16 "+" icon; the label is the tooltip
 	TSharedRef<SWidget> Button = SNew(SButton)
 		.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-		.ContentPadding(FMargin(4, 1))
+		.ContentPadding(0)
+		.HAlign(HAlign_Center)
+		.VAlign(VAlign_Center)
+		.ToolTipText(Label)
 		.OnClicked_Lambda([this, AddSlot]()
 		{
 			Edit(LOCTEXT("AddSlotTransaction", "Add Slot"), AddSlot);
 			return FReply::Handled();
 		})
 		[
-			SNew(STextBlock)
-			.Text(Label)
-			.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+			SNew(SImage)
+			.Image(FAppStyle::Get().GetBrush("Icons.Plus"))
+			.DesiredSizeOverride(FVector2D(16.0f, 16.0f))
+			.ColorAndOpacity(FSlateColor::UseForeground())
 		];
 
 	// Picked up by the group's frame in WrapElement
 	PendingAddButton = Button;
 
-	return Button;
+	return SNew(SBox)
+		.WidthOverride(24.0f)
+		.HeightOverride(24.0f)
+		[
+			Button
+		];
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked)
