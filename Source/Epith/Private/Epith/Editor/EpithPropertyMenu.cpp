@@ -4,11 +4,14 @@
 #include "Epith/EpithPanelDefinition.h"
 #include "Epith/Misc/EpithPropertyDataContainer.h"
 #include "Epith/Widgets/EpithWindowElement_Property.h"
+#include "Styling/AppStyle.h"
 #include "Styling/StyleColors.h"
 #include "StructUtils/InstancedStruct.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "UObject/UObjectHash.h"
 #include "Widgets/Layout/SBox.h"
+#include "Widgets/Layout/SSeparator.h"
+#include "Widgets/SBoxPanel.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "Epith"
@@ -123,7 +126,7 @@ namespace EpithPropertyMenu
 	 * "Some Class", or for nested properties "Some Class ➝ Struct ➝ Vector": the class, then each property the entries are nested in.
 	 * Array elements show as "Numbers[0]" (the property editor's path repeats the array's name for its elements: "Numbers.Numbers[0]").
 	 */
-	FText MakeSectionHeading(const UClass* TopLevelClass, const FString& ParentPath)
+	FText MakeSectionHeading(const UClass* TopLevelClass, const FString& ParentPath, int32& OutNestingLevel)
 	{
 		TArray<FString> Segments;
 		ParentPath.ParseIntoArray(Segments, TEXT("."));
@@ -148,6 +151,8 @@ namespace EpithPropertyMenu
 			}
 		}
 
+		OutNestingLevel = Names.Num();
+
 		FString Heading = TopLevelClass ? TopLevelClass->GetDisplayNameText().ToString() : LOCTEXT("PropertySelector_OtherSection", "Other").ToString();
 
 		for (const FString& Name : Names)
@@ -156,6 +161,44 @@ namespace EpithPropertyMenu
 		}
 
 		return FText::FromString(Heading);
+	}
+
+	/** Indent per nesting level (each ➝ in a heading), for the heading and its entries. */
+	constexpr float IndentPerLevel = 12.0f;
+
+	/**
+	 * A section heading drawn like the menu's own (SHeadingBlock: same style, capitals, separator line to the right), but indented.
+	 * The menu builder's headings can't be indented.
+	 */
+	TSharedRef<SWidget> MakeHeadingWidget(const FText& Heading, int32 NestingLevel)
+	{
+		const ISlateStyle& Style = FAppStyle::Get();
+		FMargin Padding = Style.GetMargin("Menu", ".Heading.Padding");
+		Padding.Left += NestingLevel * IndentPerLevel;
+
+		return SNew(SBox)
+			.Padding(Padding)
+			[
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.VAlign(VAlign_Center)
+				.AutoWidth()
+				[
+					SNew(STextBlock)
+					.Text(Heading.ToUpper())
+					.TextStyle(&Style, "Menu.Heading")
+				]
+				+ SHorizontalBox::Slot()
+				.Padding(FMargin(14.0f, 0.0f, 0.0f, 0.0f))
+				.VAlign(VAlign_Center)
+				.HAlign(HAlign_Fill)
+				[
+					SNew(SSeparator)
+					.Orientation(Orient_Horizontal)
+					.Thickness(1.0f)
+					.SeparatorImage(Style.GetBrush("Menu", ".Separator"))
+				]
+			];
 	}
 }
 
@@ -341,7 +384,15 @@ TSharedRef<SWidget> EpithPropertyMenu::Make(UClass* TargetClass, TFunction<void(
 			return Left.LexicalLess(Right);
 		});
 
-		MenuBuilder.BeginSection(NAME_None, MakeSectionHeading(Section.Key, Section.Value));
+		int32 NestingLevel = 0;
+		const FText Heading = MakeSectionHeading(Section.Key, Section.Value, NestingLevel);
+
+		// No heading text here: the menu builder would draw it unindented. Our own heading widget goes in instead.
+		MenuBuilder.BeginSection(NAME_None);
+
+		const bool bNoIndent = true;
+		const bool bSearchable = false;
+		MenuBuilder.AddWidget(MakeHeadingWidget(Heading, NestingLevel), FText::GetEmpty(), bNoIndent, bSearchable);
 
 		for (const auto& [Path, Handle] : Handles)
 		{
@@ -376,27 +427,22 @@ TSharedRef<SWidget> EpithPropertyMenu::Make(UClass* TargetClass, TFunction<void(
 				ToolTip = FText::Format(LOCTEXT("PropertySelector_Inherited", "{0}\n\nInherited from {1}."), ToolTip, (*ParentClass)->GetDisplayNameText());
 			}
 
-			if (bUsed || ParentClass)
-			{
-				// Green: already shown by another Property element in this panel. Dimmer: inherited from a parent class.
-				// Both: dimmer green.
-				MenuBuilder.AddMenuEntry(
-					PickAction,
+			// Green: already shown by another Property element in this panel. Dimmer: inherited from a parent class. Both: dimmer green.
+			const FSlateColor TextColor = bUsed ? FSlateColor(EStyleColor::AccentGreen) : ParentClass ? FSlateColor::UseSubduedForeground() : FSlateColor::UseForeground();
+
+			MenuBuilder.AddMenuEntry(
+				PickAction,
+				SNew(SBox)
+				.Padding(FMargin(NestingLevel * IndentPerLevel, 0.0f, 0.0f, 0.0f))
+				[
 					SNew(STextBlock)
 					.Text(Label)
-					.ColorAndOpacity(bUsed ? FSlateColor(EStyleColor::AccentGreen) : FSlateColor::UseSubduedForeground())
-					.RenderOpacity(bUsed && ParentClass ? 0.6f : 1.0f),
-					NAME_None,
-					ToolTip);
-			}
-			else
-			{
-				MenuBuilder.AddMenuEntry(
-					Label,
-					ToolTip,
-					FSlateIcon(),
-					PickAction);
-			}
+					.TextStyle(&FAppStyle::Get(), "Menu.Label")
+					.ColorAndOpacity(TextColor)
+					.RenderOpacity(bUsed && ParentClass ? 0.6f : 1.0f)
+				],
+				NAME_None,
+				ToolTip);
 		}
 
 		MenuBuilder.EndSection();
