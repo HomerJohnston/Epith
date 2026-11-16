@@ -1,6 +1,8 @@
 ﻿#include "Epith/Widgets/SEpithViewportMasterPane.h"
 
+#include "Editor.h"
 #include "IAssetViewport.h"
+#include "Selection.h"
 #include "Epith/EpithLog.h"
 #include "Epith/EpithPanelDefinition.h"
 #include "Epith/EditorWorldExtensions/EpithEditorWorldExtension.h"
@@ -69,12 +71,15 @@ void SEpithViewportMasterPane::Construct(const FArguments& InArgs)
 
 	FCoreUObjectDelegates::OnObjectsReplaced.AddSP(this, &SEpithViewportMasterPane::OnObjectsReplaced);
 
+	USelection::SelectionChangedEvent.AddSP(this, &SEpithViewportMasterPane::OnSelectionChanged);
+
 	RegisterActiveTimer(0.1f, FWidgetActiveTimerDelegate::CreateSP(this, &SEpithViewportMasterPane::CheckTargets));
 }
 
 SEpithViewportMasterPane::~SEpithViewportMasterPane()
 {
 	FCoreUObjectDelegates::OnObjectsReplaced.RemoveAll(this);
+	USelection::SelectionChangedEvent.RemoveAll(this);
 
 	OpenPanes.RemoveAll([this](const TWeakPtr<SEpithViewportMasterPane>& Pane)
 	{
@@ -190,6 +195,46 @@ void SEpithViewportMasterPane::OnObjectsReplaced(const TMap<UObject*, UObject*>&
 	{
 		Target = *NewTarget;
 		RebuildPanes();
+	}
+}
+
+bool SEpithViewportMasterPane::IsTargetTheSelection() const
+{
+	USelection* SelectedActors = GEditor ? GEditor->GetSelectedActors() : nullptr;
+
+	return SelectedActors && SelectedActors->Num() == 1 && SelectedActors->GetSelectedObject(0) == Target.Get();
+}
+
+void SEpithViewportMasterPane::SetPinned(bool bInPinned)
+{
+	bPinned = bInPinned;
+
+	// While pinned, the selection may have moved on; unpinning applies the rule right away rather than at the next change
+	if (!bPinned && !bClosed && Cast<AActor>(Target.Get()) && !IsTargetTheSelection())
+	{
+		Close();
+	}
+}
+
+void SEpithViewportMasterPane::OnSelectionChanged(UObject* ChangedSelection)
+{
+	// Only the level's actor selection counts (not e.g. component or asset selections)
+	if (bClosed || bPinned || !GEditor || ChangedSelection != GEditor->GetSelectedActors())
+	{
+		return;
+	}
+
+	// Panels for anything other than an actor aren't tied to the actor selection
+	if (!Cast<AActor>(Target.Get()))
+	{
+		return;
+	}
+
+	// Checks the resulting selection rather than reacting to every event, so re-selecting the target (e.g. the click that
+	// follows the double-click which opened the panel) doesn't close it
+	if (!IsTargetTheSelection())
+	{
+		Close();
 	}
 }
 

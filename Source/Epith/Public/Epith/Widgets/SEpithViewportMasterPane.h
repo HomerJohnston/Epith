@@ -67,6 +67,15 @@ class SEpithViewportMasterPane : public SCompoundWidget
 	/** The actor's label (or the object's name), shown in the header. */
 	FText GetTitle() const;
 
+	/**
+	 * An unpinned panel closes as soon as the selection changes so that its target is no longer the one selected actor
+	 * (another actor is clicked, the target is deselected, more actors are shift-selected). A pinned panel stays open.
+	 */
+	bool IsPinned() const { return bPinned; }
+
+	/** Unpinning closes the panel straight away if its target is no longer the one selected actor. */
+	void SetPinned(bool bInPinned);
+
 protected:
 	/** (Re)creates the object panes for Target and its subobjects. */
 	void RebuildPanes();
@@ -75,6 +84,12 @@ protected:
 	EActiveTimerReturnType CheckTargets(double InCurrentTime, float InDeltaTime);
 
 	void OnObjectsReplaced(const TMap<UObject*, UObject*>& ReplacementMap);
+
+	/** Closes an unpinned panel when the actor selection no longer is just the target. */
+	void OnSelectionChanged(UObject* ChangedSelection);
+
+	/** True if exactly one actor is selected and it's the target. */
+	bool IsTargetTheSelection() const;
 
 	/** Keeps the pane fully inside the canvas (i.e. the viewport). */
 	FVector2D ClampToCanvas(const FVector2D& Location) const;
@@ -98,6 +113,8 @@ protected:
 	static FPaneSignature MakePaneSignature(UObject* Target);
 
 	bool bClosed = false;
+
+	bool bPinned = false;
 
 	bool bDragging = false;
 

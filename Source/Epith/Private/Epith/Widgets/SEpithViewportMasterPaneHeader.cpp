@@ -19,6 +19,46 @@ void SEpithViewportMasterPaneHeader::Construct(const FArguments InArgs)
 			.Padding(12, 4, 4, 12)
 			[
 				SNew(SHorizontalBox)
+				// Pin: keeps the panel open when the selection changes. Pulled left by its own padding, so its icon sits as far from
+				// the left edge as the close button's does from the right.
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(-8, 0, 0, 0)
+				[
+					SNew(SButton)
+					.Cursor(EMouseCursor::Default)
+					.ButtonStyle(FAppStyle::Get(), "HoverHintOnly")
+					.ContentPadding(8)
+					.NormalPaddingOverride(FMargin(0))
+					.ToolTipText_Lambda([this]()
+					{
+						TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin();
+
+						return PinnedParent.IsValid() && PinnedParent->IsPinned()
+							? LOCTEXT("ViewportPropertyEditor_Unpin", "Pinned: stays open when the selection changes. Click to unpin.")
+							: LOCTEXT("ViewportPropertyEditor_Pin", "Pin: keep this panel open when the selection changes.");
+					})
+					.OnClicked_Lambda([this]()
+					{
+						if (TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin())
+						{
+							PinnedParent->SetPinned(!PinnedParent->IsPinned());
+						}
+						return FReply::Handled();
+					})
+					[
+						SNew(SImage)
+						.DesiredSizeOverride(FVector2D(16, 16))
+						.ColorAndOpacity(FSlateColor::UseForeground())
+						.Image_Lambda([this]()
+						{
+							TSharedPtr<SEpithViewportMasterPane> PinnedParent = ParentPtr.Pin();
+							const bool bPinned = PinnedParent.IsValid() && PinnedParent->IsPinned();
+							return FAppStyle::Get().GetBrush(bPinned ? "Icons.Pinned" : "Icons.Unpinned");
+						})
+					]
+				]
 				+ SHorizontalBox::Slot()
 				.HAlign(HAlign_Left)
 				.VAlign(VAlign_Center)
