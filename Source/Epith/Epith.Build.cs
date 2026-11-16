@@ -47,6 +47,7 @@ public class Epith : ModuleRules
 				"InputCore",
 				"PropertyEditor",
 				"LevelEditor",
+				"SubobjectDataInterface",
 				// ... add private dependencies that you statically link with here ...
 			}
 			);

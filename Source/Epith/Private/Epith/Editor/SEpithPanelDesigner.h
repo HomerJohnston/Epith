@@ -40,6 +40,7 @@ public:
 	TSharedRef<SWidget> MakeAddButton(const FText& Label, TFunction<void()> AddSlot) override;
 	TSharedRef<SWidget> MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked) override;
 	TSharedRef<SWidget> MakeColumnHandles(const TSharedRef<FEpithColumnLayout>& Columns) override;
+	TSharedRef<SWidget> MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked) override;
 
 	// FEditorUndoClient
 	void PostUndo(bool bSuccess) override;

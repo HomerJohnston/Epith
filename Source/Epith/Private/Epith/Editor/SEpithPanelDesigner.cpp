@@ -12,12 +12,14 @@
 #include "Epith/Widgets/EpithWindowElement_Foldout.h"
 #include "Epith/Widgets/EpithWindowElement_HorizontalGroup.h"
 #include "Epith/Widgets/EpithWindowElement_Property.h"
+#include "Epith/Widgets/EpithWindowElement_SpecialControl.h"
 #include "Epith/Widgets/EpithWindowElement_TabbedGroup.h"
 #include "Epith/Widgets/EpithWindowElement_VerticalGroup.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Styling/AppStyle.h"
 #include "Styling/StyleColors.h"
+#include "UObject/UObjectIterator.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SLeafWidget.h"
 #include "Widgets/SNullWidget.h"
@@ -49,7 +51,32 @@ namespace EpithDesigner
 			FEpithWindowElement_HorizontalGroup::StaticStruct(),
 			FEpithWindowElement_TabbedGroup::StaticStruct(),
 			FEpithWindowElement_Property::StaticStruct(),
+			FEpithWindowElement_SpecialControl::StaticStruct(),
 		};
+
+		return Types;
+	}
+
+	/** Every special control type: the subclasses of FEpithSpecialControl in all loaded modules, by name. */
+	TArray<const UScriptStruct*> GetControlTypes()
+	{
+		TArray<const UScriptStruct*> Types;
+		const UScriptStruct* Base = FEpithSpecialControl::StaticStruct();
+
+		for (TObjectIterator<UScriptStruct> It; It; ++It)
+		{
+			const UScriptStruct* Type = *It;
+
+			if (Type != Base && Type->IsChildOf(Base) && !Type->HasMetaData(TEXT("Hidden")))
+			{
+				Types.Add(Type);
+			}
+		}
+
+		Types.Sort([](const UScriptStruct& A, const UScriptStruct& B)
+		{
+			return A.GetDisplayNameText().CompareTo(B.GetDisplayNameText()) < 0;
+		});
 
 		return Types;
 	}
@@ -775,6 +802,24 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeElementMenu(TInstancedStruct<FEpith
 			})));
 	}
 
+	// A special control element: unset its control to choose another
+	FEpithWindowElement_SpecialControl* ControlElement = Slot->GetMutablePtr<FEpithWindowElement_SpecialControl>();
+
+	if (ControlElement && ControlElement->Control.IsValid())
+	{
+		Menu.AddMenuEntry(
+			LOCTEXT("UnsetControl", "Unset Control"),
+			LOCTEXT("UnsetControl_Tooltip", "Clear the chosen control, so you can choose a different one."),
+			FSlateIcon(),
+			FUIAction(FExecuteAction::CreateLambda([this, ControlElement]()
+			{
+				Edit(LOCTEXT("UnsetControlTransaction", "Unset Control"), [ControlElement]()
+				{
+					ControlElement->Control.Reset();
+				});
+			})));
+	}
+
 	Menu.AddMenuEntry(
 		LOCTEXT("Clear", "Clear"),
 		LOCTEXT("Clear_Tooltip", "Empty this slot (and everything in it) so you can choose something else."),
@@ -1047,6 +1092,45 @@ private:
 	float LiveWidth = 0.0f;
 	bool bMoved = false;
 };
+
+TSharedRef<SWidget> SEpithPanelDesigner::MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked)
+{
+	return SNew(SComboButton)
+		.ComboButtonStyle(&EpithDesigner::GetChooseComboStyle())
+		.ContentPadding(FMargin(4, 1))
+		.OnGetMenuContent_Lambda([this, OnPicked]()
+		{
+			FMenuBuilder Menu(true, nullptr);
+			const TArray<const UScriptStruct*> Types = EpithDesigner::GetControlTypes();
+
+			if (Types.Num() == 0)
+			{
+				Menu.AddWidget(SNew(STextBlock).Text(LOCTEXT("ControlPicker_None", "No special control types found.")), FText::GetEmpty());
+			}
+
+			for (const UScriptStruct* Type : Types)
+			{
+				Menu.AddMenuEntry(
+					Type->GetDisplayNameText(),
+					Type->GetToolTipText(),
+					FSlateIcon(),
+					FUIAction(FExecuteAction::CreateLambda([this, OnPicked, Type]()
+					{
+						Edit(FText::Format(LOCTEXT("SetControl", "Set Control: {0}"), Type->GetDisplayNameText()), [OnPicked, Type]()
+						{
+							OnPicked(Type);
+						});
+					})));
+			}
+
+			return Menu.MakeWidget();
+		})
+		.ButtonContent()
+		[
+			SNew(STextBlock)
+			.Text(LOCTEXT("ControlPicker_Choose", "Pick control..."))
+		];
+}
 
 TSharedRef<SWidget> SEpithPanelDesigner::MakeColumnHandles(const TSharedRef<FEpithColumnLayout>& Columns)
 {

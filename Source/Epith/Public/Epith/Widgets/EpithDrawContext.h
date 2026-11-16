@@ -17,10 +17,10 @@ class SWidget;
 enum class EEpithSlotMoveArrows : uint8
 {
 	None,
-	
+
 	/** Up/down arrows, for slots stacked vertically. */
 	UpDown,
-	
+
 	/** Left/right arrows, for slots laid out in a row. */
 	LeftRight,
 };
@@ -29,7 +29,7 @@ struct FEpithSlotActions
 {
 	/** Move buttons the designer shows to the left of the slot (MoveUp/MoveDown move it). */
 	EEpithSlotMoveArrows MoveArrows = EEpithSlotMoveArrows::None;
-	
+
 	/** The group the slot belongs to, for tooltips (e.g. "Vertical Group"). */
 	FText ParentName;
 
@@ -60,6 +60,9 @@ public:
 
 	/** A dropdown for picking a property path on the panel's target class. OnPicked runs in a transaction. */
 	virtual TSharedRef<SWidget> MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked) = 0;
+
+	/** A "Pick control..." dropdown listing every special control type (subclasses of FEpithSpecialControl). */
+	virtual TSharedRef<SWidget> MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked) = 0;
 
 	/** Drag handles over a property row's column lines, which resize the group's columns. Laid over the row's preview. */
 	virtual TSharedRef<SWidget> MakeColumnHandles(const TSharedRef<FEpithColumnLayout>& Columns) = 0;
