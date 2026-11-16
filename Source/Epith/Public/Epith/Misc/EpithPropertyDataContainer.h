@@ -102,6 +102,17 @@ public:
 		return nullptr;
 	}
 
+	/**
+	 * True for a path to an element of an array, set or map, or to anything inside one (e.g. "Numbers.Numbers[0]",
+	 * "Items.Items[2].Value"). Elements come and go as the container changes size, so they can't be picked on their own;
+	 * a panel shows the whole container instead.
+	 */
+	static bool IsContainerElementPath(FName PropertyPath)
+	{
+		int32 BracketIndex = INDEX_NONE;
+		return PropertyPath.ToString().FindChar(TEXT('['), BracketIndex);
+	}
+
 	/** Returns true the first time a path is claimed, false afterwards. Use one container per drawn layout. */
 	bool TryClaimPath(FName PropertyPath)
 	{

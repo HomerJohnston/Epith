@@ -10,8 +10,8 @@
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "UObject/UObjectHash.h"
 #include "Widgets/Layout/SBox.h"
-#include "Widgets/Layout/SSeparator.h"
 #include "Widgets/SBoxPanel.h"
+#include "Widgets/SLeafWidget.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "Epith"
@@ -105,100 +105,134 @@ namespace EpithPropertyMenu
 		return Depth;
 	}
 
-	/** Splits "Struct.Vector.X" into the path of the property it's nested in ("Struct.Vector") and its own name ("X"). */
-	void SplitPath(const FString& Path, FString& OutParentPath, FString& OutName)
-	{
-		int32 LastDot = INDEX_NONE;
-
-		if (Path.FindLastChar(TEXT('.'), LastDot))
-		{
-			OutParentPath = Path.Left(LastDot);
-			OutName = Path.Mid(LastDot + 1);
-		}
-		else
-		{
-			OutParentPath.Reset();
-			OutName = Path;
-		}
-	}
-
-	/**
-	 * "Some Class", or for nested properties "Some Class ➝ Struct ➝ Vector": the class, then each property the entries are nested in.
-	 * Array elements show as "Numbers[0]" (the property editor's path repeats the array's name for its elements: "Numbers.Numbers[0]").
-	 */
-	FText MakeSectionHeading(const UClass* TopLevelClass, const FString& ParentPath, int32& OutNestingLevel)
-	{
-		TArray<FString> Segments;
-		ParentPath.ParseIntoArray(Segments, TEXT("."));
-
-		TArray<FString> Names;
-
-		for (const FString& Segment : Segments)
-		{
-			int32 BracketIndex = INDEX_NONE;
-			const FString PropertyName = Segment.FindChar(TEXT('['), BracketIndex) ? Segment.Left(BracketIndex) : Segment;
-			const FString IndexSuffix = BracketIndex != INDEX_NONE ? Segment.Mid(BracketIndex) : FString();
-			const FString DisplayName = FName::NameToDisplayString(PropertyName, false) + IndexSuffix;
-
-			// An element of the previous segment's array replaces it: "Numbers ➝ Numbers[0]" becomes "Numbers[0]"
-			if (!IndexSuffix.IsEmpty() && Names.Num() > 0 && Names.Last() == FName::NameToDisplayString(PropertyName, false))
-			{
-				Names.Last() = DisplayName;
-			}
-			else
-			{
-				Names.Add(DisplayName);
-			}
-		}
-
-		OutNestingLevel = Names.Num();
-
-		FString Heading = TopLevelClass ? TopLevelClass->GetDisplayNameText().ToString() : LOCTEXT("PropertySelector_OtherSection", "Other").ToString();
-
-		for (const FString& Name : Names)
-		{
-			Heading += TEXT(" \u279D ") + Name;
-		}
-
-		return FText::FromString(Heading);
-	}
-
-	/** Indent per nesting level (each ➝ in a heading), for the heading and its entries. */
+	/** Indent per nesting level: a struct's members sit one level in from the struct, and so on. */
 	constexpr float IndentPerLevel = 12.0f;
 
-	/**
-	 * A section heading drawn like the menu's own (SHeadingBlock: same style, capitals, separator line to the right), but indented.
-	 * The menu builder's headings can't be indented.
-	 */
-	TSharedRef<SWidget> MakeHeadingWidget(const FText& Heading, int32 NestingLevel)
+	/** What the tree lines draw in one indent column of a row. */
+	enum class ETreeLine : uint8
 	{
-		const ISlateStyle& Style = FAppStyle::Get();
-		FMargin Padding = Style.GetMargin("Menu", ".Heading.Padding");
-		Padding.Left += NestingLevel * IndentPerLevel;
+		Empty,   // nothing
+		Through, // │  an ancestor's later siblings continue below
+		Tee,     // ├  this row, with more siblings below
+		Elbow,   // └  this row, the last of its siblings
+	};
 
-		return SNew(SBox)
-			.Padding(Padding)
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.VAlign(VAlign_Center)
-				.AutoWidth()
-				[
-					SNew(STextBlock)
-					.Text(Heading.ToUpper())
-					.TextStyle(&Style, "Menu.Heading")
-				]
-				+ SHorizontalBox::Slot()
-				.Padding(FMargin(14.0f, 0.0f, 0.0f, 0.0f))
-				.VAlign(VAlign_Center)
-				.HAlign(HAlign_Fill)
-				[
-					SNew(SSeparator)
-					.Orientation(Orient_Horizontal)
-					.Thickness(1.0f)
-					.SeparatorImage(Style.GetBrush("Menu", ".Separator"))
-				]
-			];
+	/** Tree lines down the left of a nested row: one indent column per level. */
+	class SEpithTreeLines : public SLeafWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SEpithTreeLines) {}
+			SLATE_ARGUMENT(TArray<ETreeLine>, Columns)
+		SLATE_END_ARGS()
+
+		void Construct(const FArguments& InArgs)
+		{
+			Columns = InArgs._Columns;
+		}
+
+		virtual FVector2D ComputeDesiredSize(float) const override
+		{
+			return FVector2D(Columns.Num() * IndentPerLevel, 0.0f);
+		}
+
+		virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
+		{
+			// Menu rows are padded inside their buttons; reach into that padding so the lines join up from row to row
+			const FMargin BlockPadding = FAppStyle::Get().GetMargin("Menu", ".Block.Padding");
+			const FMargin ButtonPadding = FAppStyle::Get().GetWidgetStyle<FButtonStyle>("Menu.Button").NormalPadding;
+			const float Above = BlockPadding.Top + ButtonPadding.Top;
+			const float Below = BlockPadding.Bottom + ButtonPadding.Bottom;
+
+			const float Height = AllottedGeometry.GetLocalSize().Y;
+			const float MidY = FMath::RoundToFloat(Height * 0.5f);
+			const FSlateBrush* Brush = FAppStyle::Get().GetBrush("WhiteBrush");
+			const FLinearColor Color = FSlateColor::UseSubduedForeground().GetColor(InWidgetStyle) * FLinearColor(1.0f, 1.0f, 1.0f, 0.6f);
+
+			auto DrawBox = [&](float X, float Y, float Width, float BoxHeight)
+			{
+				FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(FVector2f(Width, BoxHeight), FSlateLayoutTransform(FVector2f(X, Y))), Brush, ESlateDrawEffect::None, Color);
+			};
+
+			for (int32 i = 0; i < Columns.Num(); ++i)
+			{
+				const float ColumnLeft = i * IndentPerLevel;
+				const float LineX = ColumnLeft + FMath::FloorToFloat(IndentPerLevel * 0.5f);
+				const float BranchWidth = ColumnLeft + IndentPerLevel - LineX;
+
+				switch (Columns[i])
+				{
+				case ETreeLine::Through:
+					DrawBox(LineX, -Above, 1.0f, Above + Height + Below);
+					break;
+
+				case ETreeLine::Tee:
+					DrawBox(LineX, -Above, 1.0f, Above + Height + Below);
+					DrawBox(LineX, MidY, BranchWidth, 1.0f);
+					break;
+
+				case ETreeLine::Elbow:
+					DrawBox(LineX, -Above, 1.0f, Above + MidY + 1.0f);
+					DrawBox(LineX, MidY, BranchWidth, 1.0f);
+					break;
+
+				default:
+					break;
+				}
+			}
+
+			return LayerId;
+		}
+
+	private:
+		TArray<ETreeLine> Columns;
+	};
+
+	/** "Struct.Vector.X" -> { "Struct", "Vector", "X" }. Array elements are their own level: "Numbers.Numbers[0]" -> { "Numbers", "Numbers[0]" }. */
+	TArray<FString> GetPathSegments(FName Path)
+	{
+		TArray<FString> Segments;
+		Path.ToString().ParseIntoArray(Segments, TEXT("."));
+		return Segments;
+	}
+
+	/** Alphabetical, except array elements compare by index ("Numbers[2]" before "Numbers[10]"). */
+	int32 CompareSegments(const FString& Left, const FString& Right)
+	{
+		int32 LeftBracket = INDEX_NONE;
+		int32 RightBracket = INDEX_NONE;
+
+		if (Left.FindChar(TEXT('['), LeftBracket) && Right.FindChar(TEXT('['), RightBracket))
+		{
+			const int32 NameOrder = Left.Left(LeftBracket).Compare(Right.Left(RightBracket), ESearchCase::IgnoreCase);
+
+			if (NameOrder != 0)
+			{
+				return NameOrder;
+			}
+
+			return FCString::Atoi(*Left + LeftBracket + 1) - FCString::Atoi(*Right + RightBracket + 1);
+		}
+
+		return Left.Compare(Right, ESearchCase::IgnoreCase);
+	}
+
+	/** Tree order: a property comes right before the properties nested in it, and siblings are alphabetical. */
+	bool IsBeforeInTree(const TArray<FString>& Left, const TArray<FString>& Right)
+	{
+		const int32 SharedNum = FMath::Min(Left.Num(), Right.Num());
+
+		for (int32 i = 0; i < SharedNum; ++i)
+		{
+			const int32 Order = CompareSegments(Left[i], Right[i]);
+
+			if (Order != 0)
+			{
+				return Order < 0;
+			}
+		}
+
+		// One is nested in the other: the parent comes first
+		return Left.Num() < Right.Num();
 	}
 }
 
@@ -292,12 +326,16 @@ TSharedRef<SWidget> EpithPropertyMenu::Make(UClass* TargetClass, TFunction<void(
 
 	FEpithPropertyDataContainer PropertyData(SampleObject);
 
-	// Group property paths into sections: first by the class that declares their top-level property (the target class or one of
-	// its parents), then by the property they're nested in. So Position's X, Y and Z get a "Some Class ➝ Position" section, under
-	// the target class and ahead of anything inherited.
-	using FPropertyHandlesByPath = TMap<FName, TSharedPtr<IPropertyHandle>>;
-	using FSectionKey = TPair<const UClass*, FString>; // (top-level owner class, path of the property the entries are nested in)
-	TMap<FSectionKey, FPropertyHandlesByPath> HandlesBySection;
+	// One section per class that declares top-level properties (the target class and its parents). Properties nested in a
+	// struct, array etc. are listed right under that property, indented, in the same section.
+	struct FMenuRow
+	{
+		FName Path;
+		TArray<FString> Segments;
+		TSharedPtr<IPropertyHandle> Handle;
+	};
+
+	TMap<const UClass*, TArray<FMenuRow>> RowsBySection;
 
 	// Paths whose top-level property is declared on a parent class of the target class, not on the target class itself
 	TMap<FName, const UClass*> InheritedFrom;
@@ -307,6 +345,12 @@ TSharedRef<SWidget> EpithPropertyMenu::Make(UClass* TargetClass, TFunction<void(
 		const FProperty* Property = Handle.IsValid() ? Handle->GetProperty() : nullptr;
 
 		if (!Property)
+		{
+			continue;
+		}
+
+		// Array, set and map elements (and anything inside them) can't be picked: only the whole container
+		if (FEpithPropertyDataContainer::IsContainerElementPath(Path))
 		{
 			continue;
 		}
@@ -325,41 +369,25 @@ TSharedRef<SWidget> EpithPropertyMenu::Make(UClass* TargetClass, TFunction<void(
 			InheritedFrom.Add(Path, TopLevelOwnerClass);
 		}
 
-		FString ParentPath;
-		FString Name;
-		SplitPath(Path.ToString(), ParentPath, Name);
-
-		HandlesBySection.FindOrAdd(FSectionKey(TopLevelOwnerClass, ParentPath)).Add(Path, Handle);
+		RowsBySection.FindOrAdd(TopLevelOwnerClass).Add({ Path, GetPathSegments(Path), Handle });
 	}
 
-	// The target class's own properties, then the sections for its properties' members (structs etc.), then the same for its
-	// parent class, that class's parent, and so on.
-	TArray<FSectionKey> Sections;
-	HandlesBySection.GetKeys(Sections);
+	// The target class first, then its parent, that class's parent, and so on. Anything without a top-level class goes last.
+	TArray<const UClass*> Sections;
+	RowsBySection.GetKeys(Sections);
 
-	Sections.Sort([] (const FSectionKey& Left, const FSectionKey& Right)
+	// Taken out before sorting (TArray::Sort dereferences pointers) and put back at the end
+	Sections.Remove(nullptr);
+
+	Sections.Sort([] (const UClass& Left, const UClass& Right)
 	{
-		// Most-derived class first; anything without a top-level class goes last
-		const int32 LeftDepth = Left.Key ? GetInheritanceDepth(Left.Key) : -1;
-		const int32 RightDepth = Right.Key ? GetInheritanceDepth(Right.Key) : -1;
-
-		if (LeftDepth != RightDepth)
-		{
-			return LeftDepth > RightDepth;
-		}
-
-		// Within one class: the class's own properties (no parent path) first, then nested sections by path, so each one
-		// follows the section of the property it's nested in ("Struct" < "Struct.Vector")
-		const bool bLeftIsOwn = Left.Value.IsEmpty();
-		const bool bRightIsOwn = Right.Value.IsEmpty();
-
-		if (bLeftIsOwn != bRightIsOwn)
-		{
-			return bLeftIsOwn;
-		}
-
-		return Left.Value.Compare(Right.Value, ESearchCase::CaseSensitive) < 0;
+		return GetInheritanceDepth(&Left) > GetInheritanceDepth(&Right);
 	});
+
+	if (RowsBySection.Contains(nullptr))
+	{
+		Sections.Add(nullptr);
+	}
 
 	FMenuBuilder MenuBuilder(true, nullptr);
 
@@ -375,32 +403,84 @@ TSharedRef<SWidget> EpithPropertyMenu::Make(UClass* TargetClass, TFunction<void(
 		MenuBuilder.AddWidget(MakeMessage(LOCTEXT("PropertySelector_NoProperties", "No editable properties found.")), FText::GetEmpty());
 	}
 
-	for (const FSectionKey& Section : Sections)
+	for (const UClass* Section : Sections)
 	{
-		FPropertyHandlesByPath& Handles = HandlesBySection[Section];
+		TArray<FMenuRow>& Rows = RowsBySection[Section];
 
-		Handles.KeySort([] (const FName& Left, const FName& Right)
+		Rows.Sort([] (const FMenuRow& Left, const FMenuRow& Right)
 		{
-			return Left.LexicalLess(Right);
+			return IsBeforeInTree(Left.Segments, Right.Segments);
 		});
 
-		int32 NestingLevel = 0;
-		const FText Heading = MakeSectionHeading(Section.Key, Section.Value, NestingLevel);
+		// Work out the tree lines. A row is the last of its siblings if the next row at its level or above isn't a sibling.
+		auto GetDepth = [](const FMenuRow& Row) { return FMath::Max(0, Row.Segments.Num() - 1); };
 
-		// No heading text here: the menu builder would draw it unindented. Our own heading widget goes in instead.
-		MenuBuilder.BeginSection(NAME_None);
+		TArray<bool> IsLastSibling;
+		IsLastSibling.Init(true, Rows.Num());
 
-		const bool bNoIndent = true;
-		const bool bSearchable = false;
-		MenuBuilder.AddWidget(MakeHeadingWidget(Heading, NestingLevel), FText::GetEmpty(), bNoIndent, bSearchable);
-
-		for (const auto& [Path, Handle] : Handles)
+		for (int32 i = 0; i < Rows.Num(); ++i)
 		{
-			// The heading names the class and the properties above this one, so the entry only needs its own name
-			FString ParentPath;
-			FString Name;
-			SplitPath(Path.ToString(), ParentPath, Name);
-			const FText Label = FText::FromString(Name);
+			const int32 Depth = GetDepth(Rows[i]);
+
+			for (int32 k = i + 1; k < Rows.Num(); ++k)
+			{
+				const int32 OtherDepth = GetDepth(Rows[k]);
+
+				if (OtherDepth < Depth)
+				{
+					break;
+				}
+
+				if (OtherDepth == Depth)
+				{
+					bool bSameParent = true;
+
+					for (int32 Level = 0; Level < Depth && bSameParent; ++Level)
+					{
+						bSameParent = Rows[i].Segments[Level].Equals(Rows[k].Segments[Level], ESearchCase::CaseSensitive);
+					}
+
+					IsLastSibling[i] = !bSameParent;
+					break;
+				}
+			}
+		}
+
+		// Whether the most recent row at each depth was the last of its siblings; its column keeps a line going if it wasn't
+		TArray<bool> LastAtDepth;
+
+		MenuBuilder.BeginSection(NAME_None, Section ? Section->GetDisplayNameText() : LOCTEXT("PropertySelector_OtherSection", "Other"));
+
+		for (int32 RowIndex = 0; RowIndex < Rows.Num(); ++RowIndex)
+		{
+			const FMenuRow& Row = Rows[RowIndex];
+			const FName Path = Row.Path;
+			const TSharedPtr<IPropertyHandle>& Handle = Row.Handle;
+
+			// Nested rows sit under the property they belong to, so they only need their own name
+			const FText Label = FText::FromString(Row.Segments.Num() > 0 ? Row.Segments.Last() : Path.ToString());
+			const int32 NestingLevel = GetDepth(Row);
+
+			TArray<ETreeLine> TreeColumns;
+
+			for (int32 Level = 1; Level < NestingLevel; ++Level)
+			{
+				const bool bAncestorWasLast = !LastAtDepth.IsValidIndex(Level) || LastAtDepth[Level];
+				TreeColumns.Add(bAncestorWasLast ? ETreeLine::Empty : ETreeLine::Through);
+			}
+
+			if (NestingLevel > 0)
+			{
+				TreeColumns.Add(IsLastSibling[RowIndex] ? ETreeLine::Elbow : ETreeLine::Tee);
+			}
+
+			// Levels with no row drawn (e.g. a parent the details system hides) count as finished, so they get no line
+			while (LastAtDepth.Num() <= NestingLevel)
+			{
+				LastAtDepth.Add(true);
+			}
+
+			LastAtDepth[NestingLevel] = IsLastSibling[RowIndex];
 
 			FText ToolTip = FText::Format(LOCTEXT("PropertySelector_PathToolTip", "{0}\n\nPath: {1}"), Handle->GetToolTipText(), FText::FromName(Path));
 
@@ -432,8 +512,18 @@ TSharedRef<SWidget> EpithPropertyMenu::Make(UClass* TargetClass, TFunction<void(
 
 			MenuBuilder.AddMenuEntry(
 				PickAction,
-				SNew(SBox)
-				.Padding(FMargin(NestingLevel * IndentPerLevel, 0.0f, 0.0f, 0.0f))
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Fill)
+				[
+					SNew(SEpithTreeLines)
+					.Columns(TreeColumns)
+				]
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(NestingLevel > 0 ? 3.0f : 0.0f, 0.0f, 0.0f, 0.0f)
 				[
 					SNew(STextBlock)
 					.Text(Label)

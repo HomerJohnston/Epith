@@ -25,6 +25,13 @@ namespace EpithPropertyElement
 			return nullptr;
 		}
 
+		// Paths picked before elements were excluded from the property menu. An element may not exist (or may be a different
+		// element) by the time the panel draws, so never draw one on its own.
+		if (FEpithPropertyDataContainer::IsContainerElementPath(PropertyPath))
+		{
+			return MakeWarning(FText::Format(LOCTEXT("PropertyElement_ContainerElement", "{0} is an element of an array, set or map, which can't be shown on its own. Pick the whole property instead."), FText::FromName(PropertyPath)));
+		}
+
 		TSharedPtr<IDetailTreeNode> TreeNode = Context.PropertyData->FindTreeNode(PropertyPath);
 
 		if (!TreeNode.IsValid())
