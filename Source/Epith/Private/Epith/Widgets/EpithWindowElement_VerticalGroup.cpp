@@ -12,7 +12,7 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 	TArray<FEpithWindowElement_VerticalGroup_Slot>& MutableSlots = const_cast<TArray<FEpithWindowElement_VerticalGroup_Slot>&>(Slots);
 
 	// This group's property rows line up with each other
-	const FEpithDrawContext ChildContext = Context.WithColumns(Columns);
+	const FEpithDrawContext ChildContext = Context.WithColumns(Columns, EEpithGroupAxis::Vertical);
 
 	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
 
@@ -20,13 +20,26 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 	{
 		const FEpithWindowElement_VerticalGroup_Slot& Slot = Slots[i];
 
-		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i, StaticStruct()->GetDisplayNameText(), EEpithSlotMoveArrows::UpDown) : FEpithSlotActions();
+		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i, StaticStruct()->GetDisplayNameText(), EEpithSlotReorder::Vertical) : FEpithSlotActions();
 
 		TSharedPtr<SWidget> Widget = EpithDraw::DrawSlot(Slot.Child, ChildContext, Actions);
 
 		if (!Widget.IsValid())
 		{
 			continue;
+		}
+
+		// Designer: a divider between this slot and the previous one, which inserts a new slot there when clicked
+		if (Context.IsDesigning() && i > 0)
+		{
+			Box->AddSlot()
+			.AutoHeight()
+			[
+				Context.Designer->MakeInsertDivider(true, LOCTEXT("VerticalGroup_Insert", "Insert Slot into Vertical Group"), [SlotsPtr = &MutableSlots, i]()
+				{
+					SlotsPtr->InsertDefaulted(i);
+				})
+			];
 		}
 
 		// The slot's own Padding setting is the only spacing, so property rows can sit flush like a Details panel

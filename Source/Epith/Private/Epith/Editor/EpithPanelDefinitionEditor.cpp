@@ -2,6 +2,7 @@
 
 #include "IDetailsView.h"
 #include "PropertyEditorModule.h"
+#include "SEpithElementDetails.h"
 #include "SEpithPanelDesigner.h"
 #include "Epith/EpithPanelDefinition.h"
 #include "Framework/Docking/TabManager.h"
@@ -12,6 +13,7 @@
 
 const FName FEpithPanelDefinitionEditor::DetailsTabId(TEXT("EpithPanelDefinitionEditor_Details"));
 const FName FEpithPanelDefinitionEditor::DesignerTabId(TEXT("EpithPanelDefinitionEditor_Designer"));
+const FName FEpithPanelDefinitionEditor::ElementTabId(TEXT("EpithPanelDefinitionEditor_Element"));
 
 void FEpithPanelDefinitionEditor::Init(const EToolkitMode::Type Mode, const TSharedPtr<IToolkitHost>& InitToolkitHost, UEpithPanelDefinition* InDefinition)
 {
@@ -28,7 +30,10 @@ void FEpithPanelDefinitionEditor::Init(const EToolkitMode::Type Mode, const TSha
 
 	TWeakPtr<IDetailsView> WeakDetailsView = DetailsView;
 
+	ElementDetails = SNew(SEpithElementDetails, InDefinition);
+
 	Designer = SNew(SEpithPanelDesigner, InDefinition)
+		.ElementDetails(ElementDetails)
 		.OnDefinitionEdited_Lambda([WeakDetailsView]()
 		{
 			// The designer can change which element types live in the layout; the Details view has to rebuild for that
@@ -38,8 +43,8 @@ void FEpithPanelDefinitionEditor::Init(const EToolkitMode::Type Mode, const TSha
 			}
 		});
 
-	// Details on the left, designer on the right. Later the designer could become a tab on top of the Details view.
-	const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout("Standalone_EpithPanelDefinitionEditor_v1")
+	// Details on the left, the designer in the middle, the selected element's settings on the right
+	const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout("Standalone_EpithPanelDefinitionEditor_v2")
 		->AddArea
 		(
 			FTabManager::NewPrimaryArea()
@@ -47,14 +52,20 @@ void FEpithPanelDefinitionEditor::Init(const EToolkitMode::Type Mode, const TSha
 			->Split
 			(
 				FTabManager::NewStack()
-				->SetSizeCoefficient(0.4f)
+				->SetSizeCoefficient(0.3f)
 				->AddTab(DetailsTabId, ETabState::OpenedTab)
 			)
 			->Split
 			(
 				FTabManager::NewStack()
-				->SetSizeCoefficient(0.6f)
+				->SetSizeCoefficient(0.45f)
 				->AddTab(DesignerTabId, ETabState::OpenedTab)
+			)
+			->Split
+			(
+				FTabManager::NewStack()
+				->SetSizeCoefficient(0.25f)
+				->AddTab(ElementTabId, ETabState::OpenedTab)
 			)
 		);
 
@@ -96,6 +107,11 @@ void FEpithPanelDefinitionEditor::RegisterTabSpawners(const TSharedRef<FTabManag
 		.SetDisplayName(LOCTEXT("DesignerTab", "Panel Designer"))
 		.SetGroup(WorkspaceMenuCategory.ToSharedRef())
 		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Edit"));
+
+	InTabManager->RegisterTabSpawner(ElementTabId, FOnSpawnTab::CreateSP(this, &FEpithPanelDefinitionEditor::SpawnElementTab))
+		.SetDisplayName(LOCTEXT("ElementTab", "Element"))
+		.SetGroup(WorkspaceMenuCategory.ToSharedRef())
+		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Details"));
 }
 
 void FEpithPanelDefinitionEditor::UnregisterTabSpawners(const TSharedRef<FTabManager>& InTabManager)
@@ -104,6 +120,7 @@ void FEpithPanelDefinitionEditor::UnregisterTabSpawners(const TSharedRef<FTabMan
 
 	InTabManager->UnregisterTabSpawner(DetailsTabId);
 	InTabManager->UnregisterTabSpawner(DesignerTabId);
+	InTabManager->UnregisterTabSpawner(ElementTabId);
 }
 
 TSharedRef<SDockTab> FEpithPanelDefinitionEditor::SpawnDetailsTab(const FSpawnTabArgs& Args)
@@ -121,6 +138,15 @@ TSharedRef<SDockTab> FEpithPanelDefinitionEditor::SpawnDesignerTab(const FSpawnT
 		.Label(LOCTEXT("DesignerTab", "Panel Designer"))
 		[
 			Designer.ToSharedRef()
+		];
+}
+
+TSharedRef<SDockTab> FEpithPanelDefinitionEditor::SpawnElementTab(const FSpawnTabArgs& Args)
+{
+	return SNew(SDockTab)
+		.Label(LOCTEXT("ElementTab", "Element"))
+		[
+			ElementDetails.ToSharedRef()
 		];
 }
 

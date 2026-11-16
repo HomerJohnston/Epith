@@ -25,8 +25,21 @@ TSharedPtr<SWidget> FEpithWindowElement_Foldout::Draw(const FEpithDrawContext& C
 			];
 	}
 
+	// Keep it open or closed after a redraw
+	const void* StateKey = this;
+	TWeakPtr<FEpithViewState> WeakViewState = Context.ViewState;
+	const bool* SavedExpanded = Context.ViewState.IsValid() ? Context.ViewState->FoldoutExpanded.Find(StateKey) : nullptr;
+
 	TSharedRef<SExpandableArea> ExpandableArea = SNew(SExpandableArea)
 	.AreaTitle(FText::FromString(FoldoutTitle))
+	.InitiallyCollapsed(SavedExpanded ? !*SavedExpanded : false)
+	.OnAreaExpansionChanged_Lambda([WeakViewState, StateKey](bool bExpanded)
+	{
+		if (TSharedPtr<FEpithViewState> ViewState = WeakViewState.Pin())
+		{
+			ViewState->FoldoutExpanded.Add(StateKey, bExpanded);
+		}
+	})
 	.AllowAnimatedTransition(false)
 	// SExpandableArea pads its body by 1px by default; the contents (and their border) go right to the edge
 	.Padding(0.0f)

@@ -84,7 +84,7 @@ TArray<FEpithObjectPanelMatch> UEpithEditorWorldExtension::FindPanelMatches(cons
 		{
 			const UClass* TargetClass = PanelDefinition->GetTargetClass();
 
-			if (!TargetClass || !PanelDefinition->HasRoot() || !ObjectClass->IsChildOf(TargetClass))
+			if (PanelDefinition->IsDisabled() || !TargetClass || !PanelDefinition->HasRoot() || !ObjectClass->IsChildOf(TargetClass))
 			{
 				continue;
 			}

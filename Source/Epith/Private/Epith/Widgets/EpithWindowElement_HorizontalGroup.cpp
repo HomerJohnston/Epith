@@ -12,7 +12,7 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 	TArray<FEpithWindowElement_HorizontalGroup_Slot>& MutableSlots = const_cast<TArray<FEpithWindowElement_HorizontalGroup_Slot>&>(Slots);
 
 	// This group's property rows line up with each other
-	const FEpithDrawContext ChildContext = Context.WithColumns(Columns);
+	const FEpithDrawContext ChildContext = Context.WithColumns(Columns, EEpithGroupAxis::Horizontal);
 
 	TSharedRef<SHorizontalBox> Box = SNew(SHorizontalBox);
 
@@ -20,13 +20,26 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 	{
 		const FEpithWindowElement_HorizontalGroup_Slot& Slot = Slots[i];
 
-		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i, StaticStruct()->GetDisplayNameText(), EEpithSlotMoveArrows::LeftRight) : FEpithSlotActions();
+		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i, StaticStruct()->GetDisplayNameText(), EEpithSlotReorder::Horizontal) : FEpithSlotActions();
 
 		TSharedPtr<SWidget> Widget = EpithDraw::DrawSlot(Slot.Child, ChildContext, Actions);
 
 		if (!Widget.IsValid())
 		{
 			continue;
+		}
+
+		// Designer: a divider between this slot and the previous one, which inserts a new slot there when clicked
+		if (Context.IsDesigning() && i > 0)
+		{
+			Box->AddSlot()
+			.AutoWidth()
+			[
+				Context.Designer->MakeInsertDivider(false, LOCTEXT("HorizontalGroup_Insert", "Insert Slot into Horizontal Group"), [SlotsPtr = &MutableSlots, i]()
+				{
+					SlotsPtr->InsertDefaulted(i);
+				})
+			];
 		}
 
 		// The slot's own Padding setting is the only spacing (same as the Vertical Group)

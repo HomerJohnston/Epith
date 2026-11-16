@@ -13,22 +13,47 @@ class SWidget;
  * Edits a slot's owner (a group) can offer for that slot in the designer. Unset functions aren't offered.
  * Each one changes the panel definition directly; the designer runs them inside an undoable transaction.
  */
-/** Which move buttons the designer shows beside a slot. */
-enum class EEpithSlotMoveArrows : uint8
+/** Which way the group an element sits in lays out its slots. */
+enum class EEpithGroupAxis : uint8
 {
+	/** Not directly in a Vertical or Horizontal Group (the root, a foldout, a tab). */
 	None,
 
-	/** Up/down arrows, for slots stacked vertically. */
-	UpDown,
+	Vertical,
 
-	/** Left/right arrows, for slots laid out in a row. */
-	LeftRight,
+	Horizontal,
+};
+
+/** How the designer lets a group's slots be reordered by dragging. */
+enum class EEpithSlotReorder : uint8
+{
+	/** Not draggable. */
+	None,
+
+	/** Slots are stacked top to bottom; dropping goes above or below a slot. */
+	Vertical,
+
+	/** Slots are in a row; dropping goes left or right of a slot. */
+	Horizontal,
 };
 
 struct FEpithSlotActions
 {
-	/** Move buttons the designer shows to the left of the slot (MoveUp/MoveDown move it). */
-	EEpithSlotMoveArrows MoveArrows = EEpithSlotMoveArrows::None;
+	/** Whether (and which way) the designer shows a grab handle to drag the slot to another position in its group. */
+	EEpithSlotReorder Reorder = EEpithSlotReorder::None;
+
+	/** The slot array this slot is in, to tell groups apart while dragging (slots only move within their own group). */
+	const void* GroupId = nullptr;
+
+	/** This slot's index in its group. */
+	int32 Index = INDEX_NONE;
+
+	/** The group's slot struct (e.g. a Vertical Group slot, with its Border and Padding) and this slot's data, for the designer's Element tab. */
+	const UScriptStruct* SlotStruct = nullptr;
+	void* SlotMemory = nullptr;
+
+	/** Moves the group's slot at From so it ends up in front of the slot that's at InsertBefore now (Num = to the end). */
+	TFunction<void(int32 From, int32 InsertBefore)> MoveSlot;
 
 	/** The group the slot belongs to, for tooltips (e.g. "Vertical Group"). */
 	FText ParentName;
@@ -60,6 +85,12 @@ public:
 
 	/** A dropdown for picking a property path on the panel's target class. OnPicked runs in a transaction. */
 	virtual TSharedRef<SWidget> MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked) = 0;
+
+	/**
+	 * A thin divider between two slots that inserts a new slot there when clicked: a 1px line inside a 3px button.
+	 * bRunsHorizontally: a horizontal line (between slots stacked vertically); otherwise a vertical line (between slots in a row).
+	 */
+	virtual TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, TFunction<void()> InsertSlot) = 0;
 
 	/** A "Pick control..." dropdown listing every special control type (subclasses of FEpithSpecialControl). */
 	virtual TSharedRef<SWidget> MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked) = 0;
@@ -123,6 +154,19 @@ private:
 };
 
 /** Everything an element needs to draw itself. */
+/**
+ * UI state that should survive a redraw of the same panel: which tab each Tabbed Group shows, and which Foldouts are open.
+ * Kept by whoever redraws (the panel designer, a viewport pane) and passed down in the draw context.
+ *
+ * Keyed by the element's own data (its address): each element's instanced struct owns its memory, which stays put when the
+ * element is moved or reordered, or when slots are added around it. A brand-new element (or an undo) just starts fresh.
+ */
+struct FEpithViewState
+{
+	TMap<const void*, int32> TabIndices;
+	TMap<const void*, bool> FoldoutExpanded;
+};
+
 struct FEpithDrawContext
 {
 	FEpithDrawContext() = default;
@@ -142,8 +186,17 @@ struct FEpithDrawContext
 	/** Column widths for property rows; set by the nearest enclosing group. Null outside any group (no alignment). */
 	TSharedPtr<FEpithColumnLayout> Columns;
 
-	/** A copy of this context for drawing a group's children, with a fresh column layout so the group's rows line up with each other. */
-	EPITH_API FEpithDrawContext WithColumns(const FEpithColumnSettings& Settings) const;
+	/** Tabs and foldouts to restore after a redraw. Null = everything starts in its default state. */
+	TSharedPtr<FEpithViewState> ViewState;
+
+	/** The layout of the group this element is directly in (e.g. so a Spacer knows which way to be a gap). */
+	EEpithGroupAxis ParentAxis = EEpithGroupAxis::None;
+
+	/**
+	 * A copy of this context for drawing a group's children, with a fresh column layout so the group's rows line up with each
+	 * other, and the group's own axis as the children's ParentAxis.
+	 */
+	EPITH_API FEpithDrawContext WithColumns(const FEpithColumnSettings& Settings, EEpithGroupAxis ChildAxis = EEpithGroupAxis::None) const;
 
 	bool IsDesigning() const
 	{
@@ -162,12 +215,28 @@ namespace EpithDraw
 
 	/** Remove / move up / move down for entry Index of a group's slot array. */
 	template<typename SlotType>
-	FEpithSlotActions MakeArraySlotActions(TArray<SlotType>& Slots, int32 Index, const FText& ParentName = FText(), EEpithSlotMoveArrows MoveArrows = EEpithSlotMoveArrows::None)
+	FEpithSlotActions MakeArraySlotActions(TArray<SlotType>& Slots, int32 Index, const FText& ParentName = FText(), EEpithSlotReorder Reorder = EEpithSlotReorder::None)
 	{
 		FEpithSlotActions Actions;
 		Actions.ParentName = ParentName;
-		Actions.MoveArrows = MoveArrows;
+		Actions.Reorder = Reorder;
+		Actions.GroupId = &Slots;
+		Actions.Index = Index;
+		Actions.SlotStruct = SlotType::StaticStruct();
+		Actions.SlotMemory = Slots.IsValidIndex(Index) ? &Slots[Index] : nullptr;
 		TArray<SlotType>* SlotsPtr = &Slots;
+
+		Actions.MoveSlot = [SlotsPtr](int32 From, int32 InsertBefore)
+		{
+			if (!SlotsPtr->IsValidIndex(From) || InsertBefore < 0 || InsertBefore > SlotsPtr->Num() || InsertBefore == From || InsertBefore == From + 1)
+			{
+				return;
+			}
+
+			SlotType Moved = MoveTemp((*SlotsPtr)[From]);
+			SlotsPtr->RemoveAt(From);
+			SlotsPtr->Insert(MoveTemp(Moved), InsertBefore > From ? InsertBefore - 1 : InsertBefore);
+		};
 
 		Actions.Remove = [SlotsPtr, Index]()
 		{

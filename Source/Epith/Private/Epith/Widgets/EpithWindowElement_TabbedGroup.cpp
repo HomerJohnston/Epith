@@ -65,8 +65,21 @@ TSharedPtr<SWidget> FEpithWindowElement_TabbedGroup::Draw(const FEpithDrawContex
 				];
 		}
 
+		// Keep showing the same tab after a redraw
+		const void* StateKey = this;
+		TWeakPtr<FEpithViewState> WeakViewState = Context.ViewState;
+		const int32* SavedIndex = Context.ViewState.IsValid() ? Context.ViewState->TabIndices.Find(StateKey) : nullptr;
+
 		return SNew(SEpithTabbedPane)
 			.Border(Border)
+			.InitialIndex(SavedIndex ? static_cast<uint8>(FMath::Clamp(*SavedIndex, 0, 255)) : 0)
+			.OnTabChanged([WeakViewState, StateKey](uint8 NewIndex)
+			{
+				if (TSharedPtr<FEpithViewState> ViewState = WeakViewState.Pin())
+				{
+					ViewState->TabIndices.Add(StateKey, NewIndex);
+				}
+			})
 			.Tabs(Tabs)
 			.Panes(Panes)
 			.TabBarExtra(TabBarExtra);

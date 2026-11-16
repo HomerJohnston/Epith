@@ -1,6 +1,7 @@
 ﻿#include "SEpithPanelDesigner.h"
 
 #include "EpithPropertyMenu.h"
+#include "SEpithElementDetails.h"
 #include "ISinglePropertyView.h"
 #include "PropertyEditorModule.h"
 #include "ScopedTransaction.h"
@@ -21,6 +22,8 @@
 #include "Styling/AppStyle.h"
 #include "Styling/StyleColors.h"
 #include "UObject/UObjectIterator.h"
+#include "DragAndDrop/DecoratedDragDropOp.h"
+#include "Framework/Application/SlateApplication.h"
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SLeafWidget.h"
 #include "Widgets/SNullWidget.h"
@@ -182,6 +185,12 @@ public:
 
 		/** Background drawn inside the outline, behind the content (transparent = none). */
 		SLATE_ARGUMENT(FLinearColor, FillColor)
+
+		/** Left-click: select this element. */
+		SLATE_EVENT(FSimpleDelegate, OnSelect)
+
+		/** Selected elements always show a thicker, brighter outline. */
+		SLATE_ATTRIBUTE(bool, IsSelected)
 		SLATE_ARGUMENT(FMargin, Padding)
 		SLATE_EVENT(FOnGetContent, OnGetContextMenu)
 		SLATE_DEFAULT_SLOT(FArguments, Content)
@@ -195,6 +204,8 @@ public:
 		bOutlineContent = InArgs._bOutlineContent;
 		EmphasizeWhileHovered = InArgs._EmphasizeWhileHovered;
 		FillColor = InArgs._FillColor;
+		OnSelect = InArgs._OnSelect;
+		IsSelected = InArgs._IsSelected;
 		OnGetContextMenu = InArgs._OnGetContextMenu;
 
 		ChildSlot
@@ -213,7 +224,9 @@ public:
 
 		const int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId + 1, InWidgetStyle, bParentEnabled);
 
-		if (bOnlyWhenHovered && !IsHovered())
+		const bool bSelected = IsSelected.Get(false);
+
+		if (bOnlyWhenHovered && !IsHovered() && !bSelected)
 		{
 			return MaxLayer;
 		}
@@ -225,6 +238,11 @@ public:
 		FLinearColor Color = bDashed
 			? FSlateColor(EStyleColor::Foreground).GetColor(InWidgetStyle).CopyWithNewOpacity(0.4f)
 			: FSlateColor(EStyleColor::Primary).GetColor(InWidgetStyle);
+
+		if (bSelected)
+		{
+			Color = FStyleColors::Select.GetColor(InWidgetStyle);
+		}
 
 		if (bEmphasized)
 		{
@@ -254,9 +272,9 @@ public:
 			FSlateDrawElement::MakeBox(OutDrawElements, OutlineLayer, OutlineGeometry.ToPaintGeometry(FVector2f(W, H), FSlateLayoutTransform(FVector2f(X, Y))), Brush, ESlateDrawEffect::None, Color);
 		};
 
-		constexpr float Thickness = 1.0f;
+		const float Thickness = bSelected ? 2.0f : 1.0f;
 
-		if (!bDashed)
+		if (!bDashed || bSelected)
 		{
 			DrawRect(0, 0, Size.X, Thickness);
 			DrawRect(0, Size.Y - Thickness, Size.X, Thickness);
@@ -294,6 +312,13 @@ public:
 			return FReply::Handled();
 		}
 
+		// Left-click selects the innermost element under the cursor
+		if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && OnSelect.IsBound())
+		{
+			OnSelect.Execute();
+			return FReply::Handled();
+		}
+
 		return FReply::Unhandled();
 	}
 
@@ -317,6 +342,8 @@ private:
 	bool bOutlineContent = false;
 	TWeakPtr<SWidget> EmphasizeWhileHovered;
 	FLinearColor FillColor = FLinearColor::Transparent;
+	FSimpleDelegate OnSelect;
+	TAttribute<bool> IsSelected;
 	FOnGetContent OnGetContextMenu;
 };
 
@@ -324,10 +351,210 @@ private:
 // SEpithPanelDesigner
 // ================================================================================================
 
+// ------------------------------------------------------------------------------------------------
+
+/** Dragging a slot to another position in its group. */
+class FEpithSlotDragDrop : public FDecoratedDragDropOp
+{
+public:
+	DRAG_DROP_OPERATOR_TYPE(FEpithSlotDragDrop, FDecoratedDragDropOp)
+
+	/** The slot array the slot is in; it can only be dropped among slots of the same group. */
+	const void* GroupId = nullptr;
+
+	int32 Index = INDEX_NONE;
+
+	static TSharedRef<FEpithSlotDragDrop> New(const void* InGroupId, int32 InIndex, const FText& Label)
+	{
+		TSharedRef<FEpithSlotDragDrop> Operation = MakeShared<FEpithSlotDragDrop>();
+		Operation->GroupId = InGroupId;
+		Operation->Index = InIndex;
+		Operation->CurrentHoverText = Label;
+		Operation->CurrentIconBrush = FAppStyle::GetBrush("VerticalBoxDragIndicatorShort");
+		Operation->SetupDefaults();
+		Operation->Construct();
+		return Operation;
+	}
+};
+
+/** The grip to the left of a slot: drag it to move the slot within its group. */
+class SEpithSlotDragHandle : public SCompoundWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SEpithSlotDragHandle) {}
+		SLATE_ARGUMENT(const void*, GroupId)
+		SLATE_ARGUMENT(int32, Index)
+		SLATE_ARGUMENT(FText, Label)
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs)
+	{
+		GroupId = InArgs._GroupId;
+		Index = InArgs._Index;
+		Label = InArgs._Label;
+
+		SetCursor(EMouseCursor::GrabHand);
+		SetToolTipText(LOCTEXT("DragHandle_Tooltip", "Drag to reorder"));
+
+		ChildSlot
+		[
+			SNew(SBox)
+			.WidthOverride(10.0f)
+			.HeightOverride(20.0f)
+			.HAlign(HAlign_Center)
+			.VAlign(VAlign_Center)
+			[
+				SNew(SImage)
+				.Image(FAppStyle::GetBrush("VerticalBoxDragIndicatorShort"))
+				.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+			]
+		];
+	}
+
+	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton)
+		{
+			return FReply::Handled().DetectDrag(SharedThis(this), EKeys::LeftMouseButton);
+		}
+
+		return FReply::Unhandled();
+	}
+
+	virtual FReply OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		return FReply::Handled().BeginDragDrop(FEpithSlotDragDrop::New(GroupId, Index, Label));
+	}
+
+private:
+	const void* GroupId = nullptr;
+	int32 Index = INDEX_NONE;
+	FText Label;
+};
+
+/**
+ * Wraps a slot in the designer so another slot of the same group can be dropped before or after it, with a line showing where.
+ * Drags from other groups pass through, so they can land on an enclosing slot of their own group instead.
+ */
+class SEpithSlotDropTarget : public SCompoundWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SEpithSlotDropTarget) {}
+		SLATE_ARGUMENT(const void*, GroupId)
+		SLATE_ARGUMENT(int32, Index)
+		SLATE_ARGUMENT(bool, bHorizontal)
+		SLATE_ARGUMENT(TFunction<void(int32, int32)>, OnMove)
+		SLATE_DEFAULT_SLOT(FArguments, Content)
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs)
+	{
+		GroupId = InArgs._GroupId;
+		Index = InArgs._Index;
+		bHorizontal = InArgs._bHorizontal;
+		OnMove = InArgs._OnMove;
+
+		ChildSlot
+		[
+			InArgs._Content.Widget
+		];
+	}
+
+	virtual FReply OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
+	{
+		TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>();
+
+		if (!Operation.IsValid() || Operation->GroupId != GroupId)
+		{
+			bShowDropLine = false;
+			return FReply::Unhandled();
+		}
+
+		// Before or after this slot, by which half of it the cursor is over
+		const FVector2D Local = MyGeometry.AbsoluteToLocal(DragDropEvent.GetScreenSpacePosition());
+		const FVector2D Size = MyGeometry.GetLocalSize();
+		bDropAfter = bHorizontal ? Local.X > Size.X * 0.5f : Local.Y > Size.Y * 0.5f;
+		bShowDropLine = true;
+
+		return FReply::Handled();
+	}
+
+	virtual void OnDragLeave(const FDragDropEvent& DragDropEvent) override
+	{
+		bShowDropLine = false;
+	}
+
+	virtual FReply OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
+	{
+		bShowDropLine = false;
+
+		TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>();
+
+		if (!Operation.IsValid() || Operation->GroupId != GroupId)
+		{
+			return FReply::Unhandled();
+		}
+
+		const int32 InsertBefore = bDropAfter ? Index + 1 : Index;
+
+		// Dropping a slot right where it already is changes nothing (and makes no undo step)
+		if (OnMove && InsertBefore != Operation->Index && InsertBefore != Operation->Index + 1)
+		{
+			OnMove(Operation->Index, InsertBefore);
+		}
+
+		return FReply::Handled();
+	}
+
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
+	{
+		int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+
+		// The drag ended somewhere else (or was cancelled) without a drag-leave reaching us
+		if (bShowDropLine && !FSlateApplication::Get().IsDragDropping())
+		{
+			bShowDropLine = false;
+		}
+
+		if (bShowDropLine)
+		{
+			constexpr float Thickness = 2.0f;
+			const FVector2f Size = FVector2f(AllottedGeometry.GetLocalSize());
+
+			const FVector2f LineSize = bHorizontal ? FVector2f(Thickness, Size.Y) : FVector2f(Size.X, Thickness);
+			const FVector2f LinePosition = bHorizontal
+				? FVector2f(bDropAfter ? Size.X - Thickness : 0.0f, 0.0f)
+				: FVector2f(0.0f, bDropAfter ? Size.Y - Thickness : 0.0f);
+
+			FSlateDrawElement::MakeBox(
+				OutDrawElements,
+				MaxLayer + 1,
+				AllottedGeometry.ToPaintGeometry(LineSize, FSlateLayoutTransform(LinePosition)),
+				FAppStyle::GetBrush("WhiteBrush"),
+				ESlateDrawEffect::None,
+				FStyleColors::Select.GetColor(InWidgetStyle));
+
+			MaxLayer += 1;
+		}
+
+		return MaxLayer;
+	}
+
+private:
+	const void* GroupId = nullptr;
+	int32 Index = INDEX_NONE;
+	bool bHorizontal = false;
+	TFunction<void(int32, int32)> OnMove;
+
+	mutable bool bShowDropLine = false;
+	bool bDropAfter = false;
+};
+
 void SEpithPanelDesigner::Construct(const FArguments& InArgs, UEpithPanelDefinition* InDefinition)
 {
 	Definition = InDefinition;
 	OnDefinitionEdited = InArgs._OnDefinitionEdited;
+	ElementDetails = InArgs._ElementDetails;
 
 	FPropertyEditorModule& PropertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 
@@ -407,6 +634,7 @@ void SEpithPanelDesigner::Redraw()
 	PreviewArea->SetContent(SNullWidget::NullWidget);
 	PendingAddButton.Reset();
 	PreviewData.Reset();
+	DrawnSlots.Reset();
 
 	UEpithPanelDefinition* PanelDefinition = Definition.Get();
 
@@ -424,13 +652,15 @@ void SEpithPanelDesigner::Redraw()
 			.Text(LOCTEXT("PickTargetClass", "Pick a Target Class above to start building the panel."))
 			.ColorAndOpacity(FSlateColor::UseSubduedForeground()));
 
+		UpdateSelection();
 		return;
 	}
 
 	// The preview shows the class defaults: values don't matter here, only the layout
 	PreviewData = MakeShared<FEpithPropertyDataContainer>(TargetClass->GetDefaultObject());
 
-	const FEpithDrawContext Context(PreviewData, SharedThis(this));
+	FEpithDrawContext Context(PreviewData, SharedThis(this));
+	Context.ViewState = ViewState;
 
 	TSharedPtr<SWidget> Content = EpithDraw::DrawSlot(PanelDefinition->GetRootForEditing(), Context);
 
@@ -469,6 +699,8 @@ void SEpithPanelDesigner::Redraw()
 
 	// Line up property columns on the first frame (no one-frame flicker)
 	FEpithColumnLayout::MeasureNow(PreviewArea.ToSharedRef());
+
+	UpdateSelection();
 }
 
 void SEpithPanelDesigner::Edit(const FText& Description, TFunction<void()> Mutation)
@@ -479,6 +711,9 @@ void SEpithPanelDesigner::Edit(const FText& Description, TFunction<void()> Mutat
 	{
 		return;
 	}
+
+	// The mutation may move slot data around; the Element tab must not look at it until the redraw
+	SuspendElementDetails();
 
 	{
 		const FScopedTransaction Transaction(Description);
@@ -494,21 +729,29 @@ void SEpithPanelDesigner::Edit(const FText& Description, TFunction<void()> Mutat
 
 void SEpithPanelDesigner::OnObjectPropertyChanged(UObject* Object, FPropertyChangedEvent& PropertyChangedEvent)
 {
-	// Covers the Target Class picker, the Details tab and our own edits
+	// Covers the Target Class picker, the Details tab, the Element tab and our own edits
 	if (Object && Object == Definition.Get())
 	{
+		// A change from elsewhere may have moved slot data; changes made in the Element tab itself don't move anything
+		if (!ElementDetails.IsValid() || !ElementDetails->IsApplyingChange())
+		{
+			SuspendElementDetails();
+		}
+
 		RequestRedraw();
 	}
 }
 
 void SEpithPanelDesigner::PostUndo(bool bSuccess)
 {
+	SuspendElementDetails();
 	OnDefinitionEdited.ExecuteIfBound();
 	RequestRedraw();
 }
 
 void SEpithPanelDesigner::PostRedo(bool bSuccess)
 {
+	SuspendElementDetails();
 	OnDefinitionEdited.ExecuteIfBound();
 	RequestRedraw();
 }
@@ -528,9 +771,10 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 			SNew(SComboButton)
 			.ComboButtonStyle(&EpithDesigner::GetChooseComboStyle())
 			.ContentPadding(FMargin(6, 2))
-			.OnGetMenuContent_Lambda([this, SlotPtr]()
+			.OnGetMenuContent_Lambda([this, SlotPtr, bAllowSpacer = Actions.Reorder != EEpithSlotReorder::None]()
 			{
-				return MakeElementTypeMenu(SlotPtr);
+				// Only Vertical and Horizontal Group slots are reorderable, and only those can hold a Spacer
+				return MakeElementTypeMenu(SlotPtr, bAllowSpacer);
 			})
 			.ButtonContent()
 			[
@@ -568,15 +812,25 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 	}
 
 	// Unassigned slots are tinted a faint yellow, so they stand out as still to be filled in
+	NoteDrawnSlot(Slot, Actions);
+
 	TSharedRef<SWidget> Frame = SNew(SEpithDesignerFrame)
 		.bDashed(true)
 		.FillColor(FLinearColor(1.0f, 0.85f, 0.2f, 0.08f))
+		.OnSelect_Lambda([this, SlotPtr]()
+		{
+			Select(SlotPtr);
+		})
+		.IsSelected_Lambda([this, SlotPtr]()
+		{
+			return SelectedSlot == SlotPtr;
+		})
 		.Padding(FMargin(8, 6))
 		[
 			Row
 		];
 
-	return WithMoveButtons(Frame, Actions);
+	return WithDragHandle(Frame, Actions, LOCTEXT("DragLabel_Empty", "Empty Slot"));
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWindowElement>& Slot, TSharedRef<SWidget> ElementWidget, const FEpithSlotActions& Actions)
@@ -587,11 +841,21 @@ TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWind
 	TWeakPtr<SWidget> AddButton = PendingAddButton;
 	PendingAddButton.Reset();
 
-	// Options are on right-click. The outline shows while hovered.
+	NoteDrawnSlot(Slot, Actions);
+
+	// Left-click selects (settings in the Element tab), right-click opens the menu. The outline shows while hovered or selected.
 	TSharedRef<SWidget> Frame = SNew(SEpithDesignerFrame)
 		.bOnlyWhenHovered(true)
 		.bOutlineContent(true)
 		.EmphasizeWhileHovered(AddButton)
+		.OnSelect_Lambda([this, SlotPtr]()
+		{
+			Select(SlotPtr);
+		})
+		.IsSelected_Lambda([this, SlotPtr]()
+		{
+			return SelectedSlot == SlotPtr;
+		})
 		// Each nesting level is inset a little, so nested outlines don't sit on top of each other
 		.Padding(FMargin(2))
 		.OnGetContextMenu_Lambda([this, SlotPtr, Actions]()
@@ -602,76 +866,103 @@ TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWind
 			ElementWidget
 		];
 
-	return WithMoveButtons(Frame, Actions);
+	// What the drag shows: the element type, and for a property its path
+	FText DragLabel = Slot.GetScriptStruct() ? Slot.GetScriptStruct()->GetDisplayNameText() : LOCTEXT("DragLabel_Empty", "Empty Slot");
+
+	if (const FEpithWindowElement_Property* PropertyElement = Slot.GetPtr<FEpithWindowElement_Property>())
+	{
+		const FName Path = PropertyElement->PropertySelector.GetPropertyPath();
+
+		if (!Path.IsNone())
+		{
+			DragLabel = FText::Format(LOCTEXT("DragLabel_Property", "{0}: {1}"), DragLabel, FText::FromName(Path));
+		}
+	}
+
+	return WithDragHandle(Frame, Actions, DragLabel);
 }
 
-TSharedRef<SWidget> SEpithPanelDesigner::WithMoveButtons(TSharedRef<SWidget> Content, const FEpithSlotActions& Actions)
+void SEpithPanelDesigner::NoteDrawnSlot(TInstancedStruct<FEpithWindowElement>& Slot, const FEpithSlotActions& Actions)
 {
-	if (Actions.MoveArrows == EEpithSlotMoveArrows::None)
+	FDrawnSlot& Drawn = DrawnSlots.FindOrAdd(&Slot);
+	Drawn.SlotStruct = Actions.SlotStruct;
+	Drawn.SlotMemory = Actions.SlotMemory;
+}
+
+void SEpithPanelDesigner::Select(TInstancedStruct<FEpithWindowElement>* Slot)
+{
+	const FDrawnSlot* Drawn = Slot ? DrawnSlots.Find(Slot) : nullptr;
+	SelectedSlot = Drawn ? Slot : nullptr;
+
+	if (ElementDetails.IsValid())
+	{
+		ElementDetails->SetSelection(SelectedSlot, Drawn ? Drawn->SlotStruct : nullptr, Drawn ? Drawn->SlotMemory : nullptr);
+	}
+}
+
+void SEpithPanelDesigner::UpdateSelection()
+{
+	// If the selected slot wasn't drawn this time it's gone (removed, undone...); if it was, its data may have moved, so pass it on again
+	Select(SelectedSlot && DrawnSlots.Contains(SelectedSlot) ? SelectedSlot : nullptr);
+}
+
+void SEpithPanelDesigner::SuspendElementDetails()
+{
+	if (ElementDetails.IsValid())
+	{
+		ElementDetails->Suspend();
+	}
+}
+
+FReply SEpithPanelDesigner::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	// Only reached when no element under the cursor took the click
+	if (MouseEvent.GetEffectingButton() == EKeys::LeftMouseButton && SelectedSlot)
+	{
+		Select(nullptr);
+		return FReply::Handled();
+	}
+
+	return FReply::Unhandled();
+}
+
+TSharedRef<SWidget> SEpithPanelDesigner::WithDragHandle(TSharedRef<SWidget> Content, const FEpithSlotActions& Actions, const FText& DragLabel)
+{
+	if (Actions.Reorder == EEpithSlotReorder::None || !Actions.MoveSlot)
 	{
 		return Content;
 	}
 
-	const bool bLeftRight = Actions.MoveArrows == EEpithSlotMoveArrows::LeftRight;
+	TFunction<void(int32, int32)> MoveSlot = Actions.MoveSlot;
 
-	// A small arrow button; disabled (but still there, so slots stay lined up) when the slot can't move that way
-	auto MakeArrow = [this](FName Icon, const FText& ToolTip, const TFunction<void()>& Move) -> TSharedRef<SWidget>
-	{
-		return SNew(SBox)
-			.WidthOverride(16.0f)
-			.HeightOverride(14.0f)
-			[
-				SNew(SButton)
-				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
-				.ContentPadding(0)
-				.HAlign(HAlign_Center)
-				.VAlign(VAlign_Center)
-				.IsEnabled(static_cast<bool>(Move))
-				.ToolTipText(ToolTip)
-				.OnClicked_Lambda([this, Move]()
-				{
-					if (Move)
-					{
-						Edit(LOCTEXT("MoveSlotTransaction", "Move Slot"), Move);
-					}
-
-					return FReply::Handled();
-				})
-				[
-					SNew(SImage)
-					.Image(FAppStyle::Get().GetBrush(Icon))
-					.DesiredSizeOverride(FVector2D(12.0f, 12.0f))
-					.ColorAndOpacity(FSlateColor::UseForeground())
-				]
-			];
-	};
-
-	return SNew(SHorizontalBox)
-		+ SHorizontalBox::Slot()
-		.AutoWidth()
-		.VAlign(VAlign_Center)
-		.Padding(0, 0, 2, 0)
+	return SNew(SEpithSlotDropTarget)
+		.GroupId(Actions.GroupId)
+		.Index(Actions.Index)
+		.bHorizontal(Actions.Reorder == EEpithSlotReorder::Horizontal)
+		.OnMove([this, MoveSlot](int32 From, int32 InsertBefore)
+		{
+			Edit(LOCTEXT("MoveSlotTransaction", "Move Slot"), [MoveSlot, From, InsertBefore]()
+			{
+				MoveSlot(From, InsertBefore);
+			});
+		})
 		[
-			SNew(SVerticalBox)
-			+ SVerticalBox::Slot()
-			.AutoHeight()
+			SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0, 0, 2, 0)
 			[
-				MakeArrow(bLeftRight ? "Icons.ChevronLeft" : "Icons.ChevronUp",
-					bLeftRight ? LOCTEXT("MoveSlotLeft", "Move Left") : LOCTEXT("MoveSlotUp", "Move Up"),
-					Actions.MoveUp)
+				SNew(SEpithSlotDragHandle)
+				.GroupId(Actions.GroupId)
+				.Index(Actions.Index)
+				.Label(DragLabel)
 			]
-			+ SVerticalBox::Slot()
-			.AutoHeight()
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
 			[
-				MakeArrow(bLeftRight ? "Icons.ChevronRight" : "Icons.ChevronDown",
-					bLeftRight ? LOCTEXT("MoveSlotRight", "Move Right") : LOCTEXT("MoveSlotDown", "Move Down"),
-					Actions.MoveDown)
+				Content
 			]
-		]
-		+ SHorizontalBox::Slot()
-		.FillWidth(1.0f)
-		[
-			Content
 		];
 }
 
@@ -723,7 +1014,8 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakePropertyPicker(FName CurrentPath, T
 				{
 					OnPicked(Path);
 				});
-			});
+			},
+			EpithPropertyMenu::GatherUsedPaths(PanelDefinition));
 		})
 		.ButtonContent()
 		[
@@ -736,12 +1028,17 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakePropertyPicker(FName CurrentPath, T
 // Menus
 // ------------------------------------------------------------------------------------------------
 
-TSharedRef<SWidget> SEpithPanelDesigner::MakeElementTypeMenu(TInstancedStruct<FEpithWindowElement>* Slot)
+TSharedRef<SWidget> SEpithPanelDesigner::MakeElementTypeMenu(TInstancedStruct<FEpithWindowElement>* Slot, bool bAllowSpacer)
 {
 	FMenuBuilder Menu(true, nullptr);
 
 	for (const UScriptStruct* Type : EpithDesigner::GetElementTypes())
 	{
+		if (Type == FEpithWindowElement_Spacer::StaticStruct() && !bAllowSpacer)
+		{
+			continue;
+		}
+
 		Menu.AddMenuEntry(
 			Type->GetDisplayNameText(),
 			FText::GetEmpty(),
@@ -764,7 +1061,57 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeElementMenu(TInstancedStruct<FEpith
 
 	const UScriptStruct* Type = Slot->GetScriptStruct();
 
-	Menu.BeginSection(NAME_None, Type ? Type->GetDisplayNameText() : FText::GetEmpty());
+	// --- The element itself: actions that only make sense for this kind of element
+
+	FEpithWindowElement_Property* PropertyElement = Slot->GetMutablePtr<FEpithWindowElement_Property>();
+	const bool bCanUnsetProperty = PropertyElement && !PropertyElement->PropertySelector.GetPropertyPath().IsNone();
+
+	FEpithWindowElement_SpecialControl* ControlElement = Slot->GetMutablePtr<FEpithWindowElement_SpecialControl>();
+	const bool bCanUnsetControl = ControlElement && ControlElement->Control.IsValid();
+
+	if (Type && (bCanUnsetProperty || bCanUnsetControl))
+	{
+		Menu.BeginSection(NAME_None, FText::Format(LOCTEXT("ElementSection", "{0} Element"), Type->GetDisplayNameText()));
+
+		// Unset to show the picker again and choose another
+		if (bCanUnsetProperty)
+		{
+			Menu.AddMenuEntry(
+				LOCTEXT("UnsetProperty", "Unset Property"),
+				LOCTEXT("UnsetProperty_Tooltip", "Clear the chosen property, so you can choose a different one."),
+				FSlateIcon(),
+				FUIAction(FExecuteAction::CreateLambda([this, PropertyElement]()
+				{
+					Edit(LOCTEXT("UnsetPropertyTransaction", "Unset Property"), [PropertyElement]()
+					{
+						PropertyElement->PropertySelector.SetPropertyPath(NAME_None);
+					});
+				})));
+		}
+
+		if (bCanUnsetControl)
+		{
+			Menu.AddMenuEntry(
+				LOCTEXT("UnsetControl", "Unset Control"),
+				LOCTEXT("UnsetControl_Tooltip", "Clear the chosen control, so you can choose a different one."),
+				FSlateIcon(),
+				FUIAction(FExecuteAction::CreateLambda([this, ControlElement]()
+				{
+					Edit(LOCTEXT("UnsetControlTransaction", "Unset Control"), [ControlElement]()
+					{
+						ControlElement->Control.Reset();
+					});
+				})));
+		}
+
+		Menu.EndSection();
+	}
+
+	// --- The slot the element sits in: what goes in it, and where it is in its group
+
+	Menu.BeginSection(NAME_None, Actions.ParentName.IsEmpty()
+		? LOCTEXT("SlotSection", "Slot")
+		: FText::Format(LOCTEXT("SlotSectionIn", "Slot in {0}"), Actions.ParentName));
 
 	Menu.AddSubMenu(
 		LOCTEXT("NestIn", "Nest In"),
@@ -787,42 +1134,6 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeElementMenu(TInstancedStruct<FEpith
 			}
 		}));
 
-	// A property element without a picker: unset its property to choose another
-	FEpithWindowElement_Property* PropertyElement = Slot->GetMutablePtr<FEpithWindowElement_Property>();
-
-	if (PropertyElement && !PropertyElement->PropertySelector.GetPropertyPath().IsNone())
-	{
-		Menu.AddMenuEntry(
-			LOCTEXT("UnsetProperty", "Unset Property"),
-			LOCTEXT("UnsetProperty_Tooltip", "Clear the chosen property, so you can choose a different one."),
-			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateLambda([this, PropertyElement]()
-			{
-				Edit(LOCTEXT("UnsetPropertyTransaction", "Unset Property"), [PropertyElement]()
-				{
-					PropertyElement->PropertySelector.SetPropertyPath(NAME_None);
-				});
-			})));
-	}
-
-	// A special control element: unset its control to choose another
-	FEpithWindowElement_SpecialControl* ControlElement = Slot->GetMutablePtr<FEpithWindowElement_SpecialControl>();
-
-	if (ControlElement && ControlElement->Control.IsValid())
-	{
-		Menu.AddMenuEntry(
-			LOCTEXT("UnsetControl", "Unset Control"),
-			LOCTEXT("UnsetControl_Tooltip", "Clear the chosen control, so you can choose a different one."),
-			FSlateIcon(),
-			FUIAction(FExecuteAction::CreateLambda([this, ControlElement]()
-			{
-				Edit(LOCTEXT("UnsetControlTransaction", "Unset Control"), [ControlElement]()
-				{
-					ControlElement->Control.Reset();
-				});
-			})));
-	}
-
 	Menu.AddMenuEntry(
 		LOCTEXT("Clear", "Clear"),
 		LOCTEXT("Clear_Tooltip", "Empty this slot (and everything in it) so you can choose something else."),
@@ -835,13 +1146,16 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeElementMenu(TInstancedStruct<FEpith
 			});
 		})));
 
+	// Up/down in a Vertical Group; left/right in a Horizontal Group and between tabs
+	const bool bUpDown = Actions.Reorder == EEpithSlotReorder::Vertical;
+
 	if (Actions.MoveUp)
 	{
 		TFunction<void()> MoveUp = Actions.MoveUp;
 
-		Menu.AddMenuEntry(LOCTEXT("MoveUp", "Move Up"), FText::GetEmpty(), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([this, MoveUp]()
+		Menu.AddMenuEntry(bUpDown ? LOCTEXT("MoveUp", "Move Up") : LOCTEXT("MoveLeft", "Move Left"), FText::GetEmpty(), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([this, MoveUp]()
 		{
-			Edit(LOCTEXT("MoveUpTransaction", "Move Element"), MoveUp);
+			Edit(LOCTEXT("MoveUpTransaction", "Move Slot"), MoveUp);
 		})));
 	}
 
@@ -849,9 +1163,9 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeElementMenu(TInstancedStruct<FEpith
 	{
 		TFunction<void()> MoveDown = Actions.MoveDown;
 
-		Menu.AddMenuEntry(LOCTEXT("MoveDown", "Move Down"), FText::GetEmpty(), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([this, MoveDown]()
+		Menu.AddMenuEntry(bUpDown ? LOCTEXT("MoveDown", "Move Down") : LOCTEXT("MoveRight", "Move Right"), FText::GetEmpty(), FSlateIcon(), FUIAction(FExecuteAction::CreateLambda([this, MoveDown]()
 		{
-			Edit(LOCTEXT("MoveDownTransaction", "Move Element"), MoveDown);
+			Edit(LOCTEXT("MoveDownTransaction", "Move Slot"), MoveDown);
 		})));
 	}
 
@@ -860,12 +1174,12 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeElementMenu(TInstancedStruct<FEpith
 		TFunction<void()> Remove = Actions.Remove;
 
 		Menu.AddMenuEntry(
-			LOCTEXT("Remove", "Remove from Group"),
-			LOCTEXT("Remove_Tooltip", "Remove this slot (and everything in it) from its group."),
+			LOCTEXT("DeleteSlot", "Delete Slot"),
+			LOCTEXT("DeleteSlot_Tooltip", "Remove this slot (and everything in it) from its group."),
 			FSlateIcon(),
 			FUIAction(FExecuteAction::CreateLambda([this, Remove]()
 			{
-				Edit(LOCTEXT("RemoveTransaction", "Remove Element"), Remove);
+				Edit(LOCTEXT("DeleteSlotTransaction", "Delete Slot"), Remove);
 			})));
 	}
 
@@ -1095,6 +1409,57 @@ private:
 	float LiveWidth = 0.0f;
 	bool bMoved = false;
 };
+
+TSharedRef<SWidget> SEpithPanelDesigner::MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, TFunction<void()> InsertSlot)
+{
+	constexpr float ButtonThickness = 3.0f;
+	constexpr float LineThickness = 1.0f;
+
+	TSharedRef<TWeakPtr<SWidget>> ButtonHolder = MakeShared<TWeakPtr<SWidget>>();
+
+	// A 1px line, faint until hovered
+	TSharedRef<SWidget> Line = SNew(SBox)
+		.WidthOverride(bRunsHorizontally ? FOptionalSize() : FOptionalSize(LineThickness))
+		.HeightOverride(bRunsHorizontally ? FOptionalSize(LineThickness) : FOptionalSize())
+		[
+			SNew(SImage)
+			.Image(FAppStyle::GetBrush("WhiteBrush"))
+			.ColorAndOpacity_Lambda([ButtonHolder]()
+			{
+				TSharedPtr<SWidget> Button = ButtonHolder->Pin();
+
+				return Button.IsValid() && Button->IsHovered()
+					? FSlateColor(EStyleColor::Select)
+					: FSlateColor(FLinearColor(1.0f, 1.0f, 1.0f, 0.12f));
+			})
+		];
+
+	// The 3px button around it (1px of padding either side of the line)
+	TSharedRef<SButton> Button = SNew(SButton)
+		.ButtonStyle(FAppStyle::Get(), "NoBorder")
+		.ContentPadding(bRunsHorizontally ? FMargin(0.0f, 1.0f) : FMargin(1.0f, 0.0f))
+		.HAlign(HAlign_Fill)
+		.VAlign(VAlign_Fill)
+		.Cursor(EMouseCursor::Hand)
+		.ToolTipText(ToolTip)
+		.OnClicked_Lambda([this, InsertSlot]()
+		{
+			Edit(LOCTEXT("InsertSlotTransaction", "Insert Slot"), InsertSlot);
+			return FReply::Handled();
+		})
+		[
+			Line
+		];
+
+	*ButtonHolder = Button;
+
+	return SNew(SBox)
+		.WidthOverride(bRunsHorizontally ? FOptionalSize() : FOptionalSize(ButtonThickness))
+		.HeightOverride(bRunsHorizontally ? FOptionalSize(ButtonThickness) : FOptionalSize())
+		[
+			Button
+		];
+}
 
 TSharedRef<SWidget> SEpithPanelDesigner::MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked)
 {

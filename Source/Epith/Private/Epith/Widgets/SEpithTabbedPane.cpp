@@ -17,6 +17,9 @@ void SEpithTabbedPane::Construct(const FArguments& InArgs)
 		return;
 	}
 
+	CurrentIndex = Count > 0 ? FMath::Min<uint8>(InArgs._InitialIndex, Count - 1) : 0;
+	OnTabChanged = InArgs._OnTabChanged;
+
 	TSharedRef<SSegmentedControl<uint8>> TabBox = SNew(SSegmentedControl<uint8>)
 		.Style(FEpithStyle::Get(), EpithStyles.SegmentedControlStyle_Tab)
 		.Value(this, &SEpithTabbedPane::Value_Tab)
@@ -92,6 +95,11 @@ uint8 SEpithTabbedPane::Value_Tab() const
 void SEpithTabbedPane::OnValueChanged_Tab(uint8 NewIndex)
 {
 	CurrentIndex = NewIndex;
+
+	if (OnTabChanged)
+	{
+		OnTabChanged(NewIndex);
+	}
 }
 
 int SEpithTabbedPane::WidgetIndex_TabPane() const

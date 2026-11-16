@@ -140,7 +140,10 @@ void SEpithViewportObjectPane::Draw()
 	}
 	else
 	{
-		Content = EpithDraw::DrawSlot(*PanelDefinition->GetRoot(), FEpithDrawContext(PropertyData));
+		FEpithDrawContext Context(PropertyData);
+		Context.ViewState = ViewState;
+
+		Content = EpithDraw::DrawSlot(*PanelDefinition->GetRoot(), Context);
 
 		if (!Content.IsValid())
 		{

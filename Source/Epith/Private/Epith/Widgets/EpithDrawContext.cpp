@@ -100,9 +100,10 @@ FOptionalSize FEpithColumnLayout::GetValueWidth() const
 	return FixedValueWidth > 0.0f ? FOptionalSize(FixedValueWidth) : FOptionalSize();
 }
 
-FEpithDrawContext FEpithDrawContext::WithColumns(const FEpithColumnSettings& Settings) const
+FEpithDrawContext FEpithDrawContext::WithColumns(const FEpithColumnSettings& Settings, EEpithGroupAxis ChildAxis) const
 {
 	FEpithDrawContext ChildContext = *this;
+	ChildContext.ParentAxis = ChildAxis;
 	ChildContext.Columns = MakeShared<FEpithColumnLayout>(Settings.NameColumnWidth, Settings.ValueColumnWidth, &Settings);
 	return ChildContext;
 }

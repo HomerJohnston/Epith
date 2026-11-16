@@ -21,11 +21,12 @@
 /** Reaches into Epith types the way the editor UI would, without adding test-only setters to them. */
 struct FEpithTestAccess
 {
-	static UEpithPanelDefinition* MakeDefinition(UClass* TargetClass, bool bWithRoot = true, bool bSupplementary = false)
+	static UEpithPanelDefinition* MakeDefinition(UClass* TargetClass, bool bWithRoot = true, bool bSupplementary = false, bool bDisabled = false)
 	{
 		UEpithPanelDefinition* Definition = NewObject<UEpithPanelDefinition>(GetTransientPackage());
 		Definition->TargetClass = TargetClass;
 		Definition->bSupplementary = bSupplementary;
+		Definition->bDisabled = bDisabled;
 
 		if (bWithRoot)
 		{
@@ -161,6 +162,38 @@ bool FEpithMatchingSupplementaryTest::RunTest(const FString& Parameters)
 	// A supplementary panel on its own is enough to show a panel
 	const TArray<FEpithObjectPanelMatch> OnlySupplementary = UEpithEditorWorldExtension::FindPanelMatches({ MeshComponent.Get() }, { AnyComponent.Get() });
 	TestEqual(TEXT("A supplementary panel applies even with no main panel"), OnlySupplementary.Num(), 1);
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEpithMatchingDisabledTest, "Epith.Matching.DisabledIsIgnored", EpithTests::Flags)
+
+bool FEpithMatchingDisabledTest::RunTest(const FString& Parameters)
+{
+	TStrongObjectPtr<UEpithPanelDefinition> SceneDefinition(FEpithTestAccess::MakeDefinition(USceneComponent::StaticClass()));
+	TStrongObjectPtr<UEpithPanelDefinition> DisabledPrimitive(FEpithTestAccess::MakeDefinition(UPrimitiveComponent::StaticClass(), true, false, true));
+	TStrongObjectPtr<UEpithPanelDefinition> DisabledSupplementary(FEpithTestAccess::MakeDefinition(UActorComponent::StaticClass(), true, true, true));
+
+	TStrongObjectPtr<UStaticMeshComponent> MeshComponent(NewObject<UStaticMeshComponent>(GetTransientPackage()));
+
+	const TArray<FEpithObjectPanelMatch> Matches = UEpithEditorWorldExtension::FindPanelMatches(
+		{ MeshComponent.Get() },
+		{ SceneDefinition.Get(), DisabledPrimitive.Get(), DisabledSupplementary.Get() });
+
+	// The disabled, more specific definition doesn't win over the enabled one, and the disabled supplementary one adds nothing
+	if (TestEqual(TEXT("Only the enabled definition matches"), Matches.Num(), 1))
+	{
+		TestTrue(TEXT("The enabled scene-component definition is used"), Matches[0].PanelDefinition == SceneDefinition.Get());
+	}
+
+	// Two definitions for the same class, one disabled: no duplicate warning, the enabled one is used
+	TStrongObjectPtr<UEpithPanelDefinition> DisabledScene(FEpithTestAccess::MakeDefinition(USceneComponent::StaticClass(), true, false, true));
+	const TArray<FEpithObjectPanelMatch> NoDuplicate = UEpithEditorWorldExtension::FindPanelMatches({ MeshComponent.Get() }, { DisabledScene.Get(), SceneDefinition.Get() });
+
+	if (TestEqual(TEXT("A disabled duplicate is ignored"), NoDuplicate.Num(), 1))
+	{
+		TestTrue(TEXT("The enabled duplicate is used"), NoDuplicate[0].PanelDefinition == SceneDefinition.Get());
+	}
 
 	return true;
 }
@@ -303,6 +336,9 @@ bool FEpithPropertyRowEditConditionHidesTest::RunTest(const FString& Parameters)
 
 	State->Row = EpithPropertyRow::Make(Node.ToSharedRef(), State->PropertyData.ToSharedRef());
 
+	// A widget's bound visibility is cached and only re-read when the widget is laid out, so lay it out before each check
+	State->Row->SlatePrepass(1.0f);
+
 	TestTrue(TEXT("Hidden while the condition is false"), State->Row->GetVisibility() == EVisibility::Collapsed);
 
 	// Flip the condition the way the panel would: through the property handle
@@ -320,6 +356,7 @@ bool FEpithPropertyRowEditConditionHidesTest::RunTest(const FString& Parameters)
 
 	ADD_LATENT_AUTOMATION_COMMAND(FFunctionLatentCommand([this, State]()
 	{
+		State->Row->SlatePrepass(1.0f);
 		TestTrue(TEXT("Shown once the condition is true"), State->Row->GetVisibility() == EVisibility::Visible);
 		State->Row.Reset();
 		State->PropertyData.Reset();
@@ -402,9 +439,6 @@ bool FEpithPropertyRowArrayFollowsElementsTest::RunTest(const FString& Parameter
 
 	State->Row = EpithPropertyRow::Make(Node.ToSharedRef(), State->PropertyData.ToSharedRef());
 
-	// Child rows claim their paths when drawn, so a failed claim means the row for that element exists
-	TestFalse(TEXT("Expanded array drew its first element"), State->PropertyData->TryClaimChildPath(TEXT("Numbers[0]")));
-
 	TSharedPtr<IPropertyHandle> ArrayHandle = State->PropertyData->FindPropertyHandle(TEXT("Numbers"));
 
 	if (!TestTrue(TEXT("Array handle exists"), ArrayHandle.IsValid() && ArrayHandle->AsArray().IsValid()))
@@ -412,14 +446,27 @@ bool FEpithPropertyRowArrayFollowsElementsTest::RunTest(const FString& Parameter
 		return false;
 	}
 
+	// Element rows are keyed by the property editor's own path for them (e.g. "Numbers.Numbers[0]"), so ask for it rather than guess
+	TSharedRef<IPropertyHandle> FirstElement = ArrayHandle->AsArray()->GetElement(0);
+	const FString FirstElementPath = FirstElement->GeneratePathToProperty();
+	const FName SecondElementPath = FName(FirstElementPath.LeftChop(3) + TEXT("[1]"));
+
+	if (!TestTrue(TEXT("Element path ends in [0]"), FirstElementPath.EndsWith(TEXT("[0]"))))
+	{
+		return false;
+	}
+
+	// Child rows claim their paths when drawn, so a failed claim means the row for that element exists
+	TestFalse(TEXT("Expanded array drew its first element"), State->PropertyData->TryClaimChildPath(FName(FirstElementPath)));
+
 	ArrayHandle->AsArray()->AddItem();
 
 	EpithTests::WaitFrames(5);
 
-	ADD_LATENT_AUTOMATION_COMMAND(FFunctionLatentCommand([this, State]()
+	ADD_LATENT_AUTOMATION_COMMAND(FFunctionLatentCommand([this, State, SecondElementPath]()
 	{
 		TestEqual(TEXT("The array element was added"), State->Object->Numbers.Num(), 2);
-		TestFalse(TEXT("The expanded array drew the new element"), State->PropertyData->TryClaimChildPath(TEXT("Numbers[1]")));
+		TestFalse(TEXT("The expanded array drew the new element"), State->PropertyData->TryClaimChildPath(SecondElementPath));
 		TestEqual(TEXT("Adding an element didn't need a full rebuild"), State->StructureChanges, 0);
 		State->Row.Reset();
 		State->PropertyData.Reset();

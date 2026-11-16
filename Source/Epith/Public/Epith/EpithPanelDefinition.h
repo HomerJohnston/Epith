@@ -19,6 +19,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Epith", meta = (AllowAbstract))
 	TSubclassOf<UObject> TargetClass;
 
+	/** Ignore this panel definition entirely: it's never shown, and doesn't stop other definitions from being used. */
+	UPROPERTY(EditDefaultsOnly, Category = "Epith")
+	bool bDisabled = false;
+
 	/**
 	 * Normally only the most specific panel is shown for an object: a panel for Pawn is used instead of one for Actor.
 	 * A supplementary panel is always shown, as an extra section, for every object of its target class or a subclass.
@@ -47,6 +51,11 @@ public:
 	bool IsSupplementary() const
 	{
 		return bSupplementary;
+	}
+
+	bool IsDisabled() const
+	{
+		return bDisabled;
 	}
 
 	const FText& GetTitle() const
