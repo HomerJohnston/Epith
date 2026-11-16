@@ -21,10 +21,11 @@
 /** Reaches into Epith types the way the editor UI would, without adding test-only setters to them. */
 struct FEpithTestAccess
 {
-	static UEpithPanelDefinition* MakeDefinition(UClass* TargetClass, bool bWithRoot = true)
+	static UEpithPanelDefinition* MakeDefinition(UClass* TargetClass, bool bWithRoot = true, bool bSupplementary = false)
 	{
 		UEpithPanelDefinition* Definition = NewObject<UEpithPanelDefinition>(GetTransientPackage());
 		Definition->TargetClass = TargetClass;
+		Definition->bSupplementary = bSupplementary;
 
 		if (bWithRoot)
 		{
@@ -128,6 +129,38 @@ bool FEpithMatchingDuplicateTest::RunTest(const FString& Parameters)
 	{
 		TestTrue(TEXT("The first definition wins"), Matches[0].PanelDefinition == First.Get());
 	}
+
+	return true;
+}
+
+IMPLEMENT_SIMPLE_AUTOMATION_TEST(FEpithMatchingSupplementaryTest, "Epith.Matching.SupplementaryAlwaysApplies", EpithTests::Flags)
+
+bool FEpithMatchingSupplementaryTest::RunTest(const FString& Parameters)
+{
+	TStrongObjectPtr<UEpithPanelDefinition> SceneDefinition(FEpithTestAccess::MakeDefinition(USceneComponent::StaticClass()));
+	TStrongObjectPtr<UEpithPanelDefinition> PrimitiveDefinition(FEpithTestAccess::MakeDefinition(UPrimitiveComponent::StaticClass()));
+	TStrongObjectPtr<UEpithPanelDefinition> AnyComponent(FEpithTestAccess::MakeDefinition(UActorComponent::StaticClass(), true, true));
+	TStrongObjectPtr<UEpithPanelDefinition> AnyScene(FEpithTestAccess::MakeDefinition(USceneComponent::StaticClass(), true, true));
+
+	TStrongObjectPtr<UStaticMeshComponent> MeshComponent(NewObject<UStaticMeshComponent>(GetTransientPackage()));
+	TStrongObjectPtr<UEpithTestObject> Unrelated(NewObject<UEpithTestObject>(GetTransientPackage()));
+
+	// Supplementary definitions first and least derived first: neither order may matter
+	const TArray<FEpithObjectPanelMatch> Matches = UEpithEditorWorldExtension::FindPanelMatches(
+		{ MeshComponent.Get(), Unrelated.Get() },
+		{ AnyComponent.Get(), AnyScene.Get(), SceneDefinition.Get(), PrimitiveDefinition.Get() });
+
+	if (TestEqual(TEXT("The main panel plus both supplementary panels, nothing for the unrelated object"), Matches.Num(), 3))
+	{
+		// Most general target class first: ActorComponent, SceneComponent, then the PrimitiveComponent main panel
+		TestTrue(TEXT("The most general supplementary panel comes first"), Matches[0].PanelDefinition == AnyComponent.Get());
+		TestTrue(TEXT("Then the next most general"), Matches[1].PanelDefinition == AnyScene.Get());
+		TestTrue(TEXT("The most specific (main) panel comes last"), Matches[2].PanelDefinition == PrimitiveDefinition.Get());
+	}
+
+	// A supplementary panel on its own is enough to show a panel
+	const TArray<FEpithObjectPanelMatch> OnlySupplementary = UEpithEditorWorldExtension::FindPanelMatches({ MeshComponent.Get() }, { AnyComponent.Get() });
+	TestEqual(TEXT("A supplementary panel applies even with no main panel"), OnlySupplementary.Num(), 1);
 
 	return true;
 }

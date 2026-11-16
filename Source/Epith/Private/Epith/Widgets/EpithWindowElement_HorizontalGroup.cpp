@@ -59,7 +59,19 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 		];
 	}
 
-	return Box;
+	if (Border == 0)
+	{
+		return Box;
+	}
+
+	// The group's own border, around all of its slots
+	return SNew(SBorder)
+		.BorderImage(FEpithStyle::GetBorderBrush(Border, false))
+		.BorderBackgroundColor(EpithColor::Noir_SemiTrans)
+		.Padding(FEpithStyle::GetBorderPadding(Border, false))
+		[
+			Box
+		];
 }
 
 #undef LOCTEXT_NAMESPACE

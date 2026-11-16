@@ -312,7 +312,7 @@ namespace EpithPropertyRow
 
 			Box->AddSlot()
 			.AutoHeight()
-			.Padding(0, 1)
+			.Padding(0, 0)
 			[
 				ChildWidget
 			];

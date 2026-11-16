@@ -13,6 +13,7 @@
 #include "Epith/Widgets/EpithWindowElement_HorizontalGroup.h"
 #include "Epith/Widgets/EpithWindowElement_Property.h"
 #include "Epith/Widgets/EpithWindowElement_SpecialControl.h"
+#include "Epith/Widgets/EpithWindowElement_Spacer.h"
 #include "Epith/Widgets/EpithWindowElement_TabbedGroup.h"
 #include "Epith/Widgets/EpithWindowElement_VerticalGroup.h"
 #include "Framework/Application/SlateApplication.h"
@@ -52,6 +53,7 @@ namespace EpithDesigner
 			FEpithWindowElement_TabbedGroup::StaticStruct(),
 			FEpithWindowElement_Property::StaticStruct(),
 			FEpithWindowElement_SpecialControl::StaticStruct(),
+			FEpithWindowElement_Spacer::StaticStruct(),
 		};
 
 		return Types;
@@ -439,8 +441,9 @@ void SEpithPanelDesigner::Redraw()
 		SNew(SBox)
 		.HAlign(HAlign_Left)
 		[
+			// Same background as a section of the real panel
 			SNew(SBorder)
-			.BorderImage(FAppStyle::GetBrush("Menu.Background"))
+			.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
 			.Padding(8)
 			[
 				SNew(SBox)

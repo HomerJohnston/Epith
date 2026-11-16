@@ -2,11 +2,15 @@
 
 #include "IAssetViewport.h"
 #include "Epith/EpithLog.h"
+#include "Epith/EpithPanelDefinition.h"
 #include "Epith/EditorWorldExtensions/EpithEditorWorldExtension.h"
 #include "Epith/Style/EpithColor.h"
 #include "Epith/Widgets/SEpithViewportMasterPaneHeader.h"
 #include "Epith/Widgets/SEpithViewportObjectPane.h"
 #include "Widgets/Layout/SBackgroundBlur.h"
+#include "Styling/AppStyle.h"
+#include "Widgets/Images/SImage.h"
+#include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SSpacer.h"
 
 TArray<TWeakPtr<SEpithViewportMasterPane>> SEpithViewportMasterPane::OpenPanes;
@@ -101,6 +105,7 @@ void SEpithViewportMasterPane::RebuildPanes()
 	}
 
 	ObjectPanes = UEpithEditorWorldExtension::CreateObjectPanes(Target.Get());
+	BuiltPaneSignature = MakePaneSignature(Target.Get());
 
 	for (int32 i = 0; i < ObjectPanes.Num(); ++i)
 	{
@@ -110,16 +115,34 @@ void SEpithViewportMasterPane::RebuildPanes()
 			ObjectPanes[i]
 		];
 
+		// A solid black bar between panes
 		if (i < ObjectPanes.Num() - 1)
 		{
 			PaneBox->AddSlot()
 			.AutoHeight()
 			[
-				SNew(SSpacer)
-				.Size(8)
+				SNew(SBox)
+				.HeightOverride(3.0f)
+				[
+					SNew(SImage)
+					.Image(FAppStyle::GetBrush("WhiteBrush"))
+					.ColorAndOpacity(FLinearColor::Black)
+				]
 			];
 		}
 	}
+}
+
+SEpithViewportMasterPane::FPaneSignature SEpithViewportMasterPane::MakePaneSignature(UObject* InTarget)
+{
+	FPaneSignature Signature;
+
+	for (const FEpithObjectPanelMatch& Match : UEpithEditorWorldExtension::FindObjectPanelMatches(InTarget, false))
+	{
+		Signature.Emplace(Match.Object->GetFName(), Match.PanelDefinition);
+	}
+
+	return Signature;
 }
 
 EActiveTimerReturnType SEpithViewportMasterPane::CheckTargets(double InCurrentTime, float InDeltaTime)
@@ -143,7 +166,10 @@ EActiveTimerReturnType SEpithViewportMasterPane::CheckTargets(double InCurrentTi
 		return !Pane->HasValidTarget();
 	});
 
-	if (bAnyPaneStale)
+	// A component with a panel definition was added, removed or renamed (by a button, the Details panel, undo, a script...)
+	const bool bPanesChanged = !bAnyPaneStale && MakePaneSignature(Target.Get()) != BuiltPaneSignature;
+
+	if (bAnyPaneStale || bPanesChanged)
 	{
 		RebuildPanes();
 
@@ -212,13 +238,13 @@ bool SEpithViewportMasterPane::IsOpenFor(const UObject* Object)
 	for (const TWeakPtr<SEpithViewportMasterPane>& Pane : OpenPanes)
 	{
 		TSharedPtr<SEpithViewportMasterPane> Pinned = Pane.Pin();
-		
+
 		if (Pinned.IsValid() && !Pinned->bClosed && Pinned->Target.Get() == Object)
 		{
 			return true;
 		}
 	}
-	
+
 	return false;
 }
 

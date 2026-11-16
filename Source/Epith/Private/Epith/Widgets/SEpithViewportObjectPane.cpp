@@ -152,13 +152,22 @@ void SEpithViewportObjectPane::Draw()
 
 	if (Target.IsValid())
 	{
+		// The definition's Title if it has one. Otherwise a supplementary panel is titled after its own target class (e.g. "Actor"),
+		// so it doesn't repeat the main panel's title; a main panel falls back to the object's class or component name.
+		FText Title = PanelDefinition.IsValid() ? PanelDefinition->GetTitle() : FText::GetEmpty();
+
+		if (Title.IsEmpty() && PanelDefinition.IsValid() && PanelDefinition->IsSupplementary() && PanelDefinition->GetTargetClass())
+		{
+			Title = PanelDefinition->GetTargetClass()->GetDisplayNameText();
+		}
+
 		Box->AddSlot()
 		.AutoHeight()
 		.Padding(12, 12, 12, 8)
 		[
 			SNew(SEpithViewportObjectPaneHeader)
 			.Target(Target.Get())
-			.TitleOverride(PanelDefinition.IsValid() ? PanelDefinition->GetTitle() : FText::GetEmpty())
+			.TitleOverride(Title)
 		];
 	}
 
@@ -170,9 +179,9 @@ void SEpithViewportObjectPane::Draw()
 
 	ChildSlot
 	[
+		// The Details panel's row color (Colors.Panel, #242424)
 		SNew(SBorder)
-		.BorderImage( FAppStyle::GetBrush("Menu.Background") )
-		.BorderBackgroundColor(EpithColor::White_BarelyTrans)
+		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
 		.Padding(8)
 		[
 			SNew(SBox)
@@ -182,7 +191,7 @@ void SEpithViewportObjectPane::Draw()
 			]
 		]
 	];
-	
+
 	// Line up property columns on the first frame (no one-frame flicker)
 	FEpithColumnLayout::MeasureNow(Box);
 }

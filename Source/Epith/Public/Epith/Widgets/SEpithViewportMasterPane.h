@@ -2,6 +2,8 @@
 
 #include "Widgets/SCompoundWidget.h"
 
+class UEpithPanelDefinition;
+
 class IAssetViewport;
 class SEpithViewportObjectPane;
 class SVerticalBox;
@@ -42,7 +44,7 @@ class SEpithViewportMasterPane : public SCompoundWidget
 
 	/** Closes every open Epith panel (e.g. when Play-in-Editor starts). */
 	static void CloseAll();
-	
+
 	/** True if a panel is open for this object. */
 	static bool IsOpenFor(const UObject* Object);
 
@@ -86,6 +88,14 @@ protected:
 	TSharedPtr<SVerticalBox> PaneBox;
 
 	TArray<TSharedRef<SEpithViewportObjectPane>> ObjectPanes;
+
+	/** One entry per pane: the object's name and its panel definition. Names, not pointers: Blueprint construction scripts recreate components under the same names. */
+	using FPaneSignature = TArray<TPair<FName, TWeakObjectPtr<UEpithPanelDefinition>>>;
+
+	/** The panes the panel was last built with. When the target's panes would differ (a component was added or removed), the panel rebuilds. */
+	FPaneSignature BuiltPaneSignature;
+
+	static FPaneSignature MakePaneSignature(UObject* Target);
 
 	bool bClosed = false;
 

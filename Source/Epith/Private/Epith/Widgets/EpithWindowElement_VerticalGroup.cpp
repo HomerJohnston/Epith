@@ -57,7 +57,19 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 		];
 	}
 
-	return Box;
+	if (Border == 0)
+	{
+		return Box;
+	}
+
+	// The group's own border, around all of its slots
+	return SNew(SBorder)
+		.BorderImage(FEpithStyle::GetBorderBrush(Border, false))
+		.BorderBackgroundColor(EpithColor::Noir_SemiTrans)
+		.Padding(FEpithStyle::GetBorderPadding(Border, false))
+		[
+			Box
+		];
 }
 
 #undef LOCTEXT_NAMESPACE

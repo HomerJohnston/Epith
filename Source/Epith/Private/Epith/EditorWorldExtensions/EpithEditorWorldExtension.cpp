@@ -50,9 +50,21 @@ bool UEpithEditorWorldExtension::InputKey(FEditorViewportClient* InViewportClien
 	return TryShowPanel(SelectedActors[0], ClickedViewport);
 }
 
-TArray<FEpithObjectPanelMatch> UEpithEditorWorldExtension::FindPanelMatches(const TArray<UObject*>& Objects, const TArray<UEpithPanelDefinition*>& PanelDefinitions)
+TArray<FEpithObjectPanelMatch> UEpithEditorWorldExtension::FindPanelMatches(const TArray<UObject*>& Objects, const TArray<UEpithPanelDefinition*>& PanelDefinitions, bool bLogDuplicates)
 {
 	TArray<FEpithObjectPanelMatch> Matches;
+
+	auto GetClassDepth = [](const UClass* Class)
+	{
+		int32 Depth = 0;
+
+		for (const UClass* Super = Class; Super; Super = Super->GetSuperClass())
+		{
+			++Depth;
+		}
+
+		return Depth;
+	};
 
 	for (UObject* Object : Objects)
 	{
@@ -66,6 +78,8 @@ TArray<FEpithObjectPanelMatch> UEpithEditorWorldExtension::FindPanelMatches(cons
 		UEpithPanelDefinition* BestDefinition = nullptr;
 		const UClass* BestClass = nullptr;
 
+		TArray<UEpithPanelDefinition*> Supplementary;
+
 		for (UEpithPanelDefinition* PanelDefinition : PanelDefinitions)
 		{
 			const UClass* TargetClass = PanelDefinition->GetTargetClass();
@@ -75,12 +89,22 @@ TArray<FEpithObjectPanelMatch> UEpithEditorWorldExtension::FindPanelMatches(cons
 				continue;
 			}
 
+			// Always used, alongside whichever main panel wins
+			if (PanelDefinition->IsSupplementary())
+			{
+				Supplementary.Add(PanelDefinition);
+				continue;
+			}
+
 			if (!BestClass || TargetClass->IsChildOf(BestClass))
 			{
 				if (BestClass == TargetClass)
 				{
-					UE_LOG(LogEpith, Warning, TEXT("Panel definitions [%s] and [%s] both target class [%s]; using [%s]."),
-						*BestDefinition->GetPathName(), *PanelDefinition->GetPathName(), *TargetClass->GetName(), *BestDefinition->GetPathName());
+					if (bLogDuplicates)
+					{
+						UE_LOG(LogEpith, Warning, TEXT("Panel definitions [%s] and [%s] both target class [%s]; using [%s]."),
+							*BestDefinition->GetPathName(), *PanelDefinition->GetPathName(), *TargetClass->GetName(), *BestDefinition->GetPathName());
+					}
 					continue;
 				}
 
@@ -89,9 +113,36 @@ TArray<FEpithObjectPanelMatch> UEpithEditorWorldExtension::FindPanelMatches(cons
 			}
 		}
 
+		TArray<UEpithPanelDefinition*> ObjectDefinitions = Supplementary;
+
 		if (BestDefinition)
 		{
-			Matches.Emplace(Object, BestDefinition);
+			ObjectDefinitions.Add(BestDefinition);
+		}
+
+		// Most general target class first (Actor, then Pawn, then Character). For the same class, the main panel comes
+		// first, then supplementary panels by asset name.
+		ObjectDefinitions.Sort([&GetClassDepth](const UEpithPanelDefinition& A, const UEpithPanelDefinition& B)
+		{
+			const int32 DepthA = GetClassDepth(A.GetTargetClass());
+			const int32 DepthB = GetClassDepth(B.GetTargetClass());
+
+			if (DepthA != DepthB)
+			{
+				return DepthA < DepthB;
+			}
+
+			if (A.IsSupplementary() != B.IsSupplementary())
+			{
+				return !A.IsSupplementary();
+			}
+
+			return A.GetName() < B.GetName();
+		});
+
+		for (UEpithPanelDefinition* PanelDefinition : ObjectDefinitions)
+		{
+			Matches.Emplace(Object, PanelDefinition);
 		}
 	}
 
@@ -140,24 +191,21 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target, TSharedPtr<IAsset
 	return true;
 }
 
-TArray<TSharedRef<SEpithViewportObjectPane>> UEpithEditorWorldExtension::CreateObjectPanes(UObject* Target)
+TArray<FEpithObjectPanelMatch> UEpithEditorWorldExtension::FindObjectPanelMatches(UObject* Target, bool bLogDuplicates)
 {
-	TArray<TSharedRef<SEpithViewportObjectPane>> Panes;
-
 	if (!IsValid(Target))
 	{
-		return Panes;
+		return {};
 	}
 
 	TArray<UEpithPanelDefinition*> PanelDefinitions = GetPanelDefinitions();
 
 	if (PanelDefinitions.Num() == 0)
 	{
-		return Panes;
+		return {};
 	}
 
-	TArray<UObject*> Objects = GetAllObjects(Target);
-	TArray<FEpithObjectPanelMatch> Matches = FindPanelMatches(Objects, PanelDefinitions);
+	TArray<FEpithObjectPanelMatch> Matches = FindPanelMatches(GetAllObjects(Target), PanelDefinitions, bLogDuplicates);
 
 	// Keep the target itself first, then sort the rest by name.
 	Matches.StableSort([Target](const FEpithObjectPanelMatch& First, const FEpithObjectPanelMatch& Second)
@@ -170,7 +218,14 @@ TArray<TSharedRef<SEpithViewportObjectPane>> UEpithEditorWorldExtension::CreateO
 		return First.Object->GetName() < Second.Object->GetName();
 	});
 
-	for (const FEpithObjectPanelMatch& Match : Matches)
+	return Matches;
+}
+
+TArray<TSharedRef<SEpithViewportObjectPane>> UEpithEditorWorldExtension::CreateObjectPanes(UObject* Target)
+{
+	TArray<TSharedRef<SEpithViewportObjectPane>> Panes;
+
+	for (const FEpithObjectPanelMatch& Match : FindObjectPanelMatches(Target))
 	{
 		Panes.Add(SNew(SEpithViewportObjectPane)
 			.Target(Match.Object)
