@@ -385,6 +385,8 @@ public:
 		SLATE_ARGUMENT(const void*, GroupId)
 		SLATE_ARGUMENT(int32, Index)
 		SLATE_ARGUMENT(FText, Label)
+		/** The group the slot is in (e.g. "Vertical Group"), for the tooltip */
+		SLATE_ARGUMENT(FText, ParentName)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs)
@@ -394,7 +396,9 @@ public:
 		Label = InArgs._Label;
 
 		SetCursor(EMouseCursor::GrabHand);
-		SetToolTipText(LOCTEXT("DragHandle_Tooltip", "Drag to reorder"));
+		SetToolTipText(InArgs._ParentName.IsEmpty()
+			? LOCTEXT("DragHandle_Tooltip", "Drag Slot")
+			: FText::Format(LOCTEXT("DragHandle_TooltipIn", "Drag {0} Slot"), InArgs._ParentName));
 
 		ChildSlot
 		[
@@ -957,6 +961,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::WithDragHandle(TSharedRef<SWidget> Cont
 				.GroupId(Actions.GroupId)
 				.Index(Actions.Index)
 				.Label(DragLabel)
+				.ParentName(Actions.ParentName)
 			]
 			+ SHorizontalBox::Slot()
 			.FillWidth(1.0f)
