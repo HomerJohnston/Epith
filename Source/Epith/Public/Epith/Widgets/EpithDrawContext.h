@@ -2,6 +2,7 @@
 
 #include "CoreMinimal.h"
 #include "StructUtils/InstancedStruct.h"
+#include "Layout/Margin.h"
 #include "Types/SlateStructs.h"
 
 struct FEpithColumnSettings;
@@ -167,6 +168,25 @@ struct FEpithViewState
 	TMap<const void*, bool> FoldoutExpanded;
 };
 
+/** Which grid lines a property row draws along its top and bottom. (The lines between its columns are always drawn.) */
+struct FEpithRowEdges
+{
+	/** A line along the top. Vertical Groups bind it to "no visible property row directly above this one". */
+	TAttribute<bool> Top;
+
+	/** A line along the bottom. Rows in a Vertical Group, and their child rows. */
+	bool bBottom = false;
+
+	/** Both lines: for a row on its own (directly in a Foldout, a Tabbed Group's tab, or at the root of a panel). */
+	static FEpithRowEdges Standalone()
+	{
+		FEpithRowEdges Edges;
+		Edges.Top.Set(true);
+		Edges.bBottom = true;
+		return Edges;
+	}
+};
+
 struct FEpithDrawContext
 {
 	FEpithDrawContext() = default;
@@ -193,6 +213,23 @@ struct FEpithDrawContext
 	EEpithGroupAxis ParentAxis = EEpithGroupAxis::None;
 
 	/**
+	 * How far past each of its edges this element's filled Spacer bars should reach, to join the bar of a filled Spacer in a
+	 * neighbouring group (making T and + shapes). 0 on a side = no bar to join there.
+	 *
+	 * Set by Vertical and Horizontal Groups, one level deep: a group next to a filled spacer gets the distance to its bar, and
+	 * passes it (plus its own border and slot padding) on to its children across its own direction. Only spacers use it.
+	 * Cleared by WithColumns, so it never reaches further down. Always 0 in the designer, whose chrome sits between slots.
+	 */
+	FMargin SpacerReach = FMargin(0.0f);
+
+	/**
+	 * Top and bottom grid lines for a property row drawn in this slot. A row on its own (at the root, directly in a Foldout or a
+	 * tab) gets both; Vertical Groups set them per slot so a run of rows shares single lines; Horizontal Groups give their rows
+	 * none. Reset to both by WithColumns.
+	 */
+	FEpithRowEdges RowEdges = FEpithRowEdges::Standalone();
+
+	/**
 	 * A copy of this context for drawing a group's children, with a fresh column layout so the group's rows line up with each
 	 * other, and the group's own axis as the children's ParentAxis.
 	 */
@@ -212,6 +249,9 @@ namespace EpithDraw
 	 * In the designer: empty slots become pickers, and elements get designer chrome.
 	 */
 	EPITH_API TSharedPtr<SWidget> DrawSlot(const TInstancedStruct<FEpithWindowElement>& Slot, const FEpithDrawContext& Context, const FEpithSlotActions& Actions = FEpithSlotActions());
+
+	/** True if the slot holds a Spacer that draws its bar (bFilled), i.e. one that neighbouring spacers can join. */
+	EPITH_API bool IsFilledSpacer(const TInstancedStruct<FEpithWindowElement>& Slot);
 
 	/** Remove / move up / move down for entry Index of a group's slot array. */
 	template<typename SlotType>

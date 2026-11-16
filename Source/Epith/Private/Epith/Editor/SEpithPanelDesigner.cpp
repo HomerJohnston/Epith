@@ -17,6 +17,7 @@
 #include "Epith/Widgets/EpithWindowElement_Spacer.h"
 #include "Epith/Widgets/EpithWindowElement_TabbedGroup.h"
 #include "Epith/Widgets/EpithWindowElement_VerticalGroup.h"
+#include "Framework/Application/IMenu.h"
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Styling/AppStyle.h"
@@ -226,7 +227,10 @@ public:
 
 		const bool bSelected = IsSelected.Get(false);
 
-		if (bOnlyWhenHovered && !IsHovered() && !bSelected)
+		// While this frame's context menu is open, it shows as if hovered (the cursor is over the menu by then), plus a highlight
+		const bool bMenuOpen = bContextMenuOpen;
+
+		if (bOnlyWhenHovered && !IsHovered() && !bSelected && !bMenuOpen)
 		{
 			return MaxLayer;
 		}
@@ -266,6 +270,12 @@ public:
 
 		const FVector2f Size(OutlineGeometry.GetLocalSize());
 		const int32 OutlineLayer = MaxLayer + 1;
+
+		// The right-clicked slot or element: a see-through white cover over its extents, under the outline
+		if (bMenuOpen)
+		{
+			FSlateDrawElement::MakeBox(OutDrawElements, OutlineLayer, OutlineGeometry.ToPaintGeometry(), Brush, ESlateDrawEffect::None, FLinearColor(1.0f, 1.0f, 1.0f, 0.12f));
+		}
 
 		auto DrawRect = [&](float X, float Y, float W, float H)
 		{
@@ -328,7 +338,15 @@ public:
 		{
 			const FWidgetPath WidgetPath = MouseEvent.GetEventPath() ? *MouseEvent.GetEventPath() : FWidgetPath();
 
-			FSlateApplication::Get().PushMenu(AsShared(), WidgetPath, OnGetContextMenu.Execute(), MouseEvent.GetScreenSpacePosition(), FPopupTransitionEffect(FPopupTransitionEffect::ContextMenu));
+			TSharedPtr<IMenu> Menu = FSlateApplication::Get().PushMenu(AsShared(), WidgetPath, OnGetContextMenu.Execute(), MouseEvent.GetScreenSpacePosition(), FPopupTransitionEffect(FPopupTransitionEffect::ContextMenu));
+
+			// Highlight this frame until the menu goes away (an entry was picked, or it was clicked off or escaped)
+			if (Menu.IsValid())
+			{
+				bContextMenuOpen = true;
+
+				Menu->GetOnMenuDismissed().AddSP(this, &SEpithDesignerFrame::OnContextMenuDismissed);
+			}
 
 			return FReply::Handled();
 		}
@@ -337,6 +355,12 @@ public:
 	}
 
 private:
+	void OnContextMenuDismissed(TSharedRef<IMenu> Menu)
+	{
+		bContextMenuOpen = false;
+	}
+
+	bool bContextMenuOpen = false;
 	bool bDashed = false;
 	bool bOnlyWhenHovered = false;
 	bool bOutlineContent = false;

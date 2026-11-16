@@ -57,7 +57,7 @@ namespace EpithPropertyElement
 			return MakeWarning(FText::Format(LOCTEXT("PropertyElement_Duplicate", "{0} is already shown in this panel"), FText::FromName(PropertyPath)));
 		}
 
-		return EpithPropertyRow::Make(TreeNode.ToSharedRef(), Context.PropertyData.ToSharedRef(), 0, Context.Columns);
+		return EpithPropertyRow::Make(TreeNode.ToSharedRef(), Context.PropertyData.ToSharedRef(), 0, Context.Columns, Context.RowEdges);
 	}
 }
 

@@ -3,6 +3,8 @@
 #include "Epith/Style/EpithColor.h"
 #include "Epith/Style/EpithStyle.h"
 #include "Epith/Widgets/EpithDrawContext.h"
+#include "Epith/Widgets/EpithWindowElement_Property.h"
+#include "Epith/Widgets/EpithWindowElement_Spacer.h"
 
 #define LOCTEXT_NAMESPACE "Epith"
 
@@ -14,7 +16,24 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 	// This group's property rows line up with each other
 	const FEpithDrawContext ChildContext = Context.WithColumns(Columns, EEpithGroupAxis::Vertical);
 
+	// Filled spacers join up across groups (see FEpithDrawContext::SpacerReach). Not in the designer: its chrome sits between slots.
+	const bool bJoinSpacers = !Context.IsDesigning();
+	const FMargin GroupBorderPadding = Border > 0 ? FEpithStyle::GetBorderPadding(Border, false) : FMargin(0.0f);
+
+	// The space between a slot's edge and its content: its Padding setting plus its border
+	auto GetSlotInset = [this](int32 Index)
+	{
+		const FEpithWindowElement_BoxDisplayParams& Params = Slots[Index].DisplayParams;
+		return FMargin(Params.Padding) + FEpithStyle::GetBorderPadding(Params.Border, false);
+	};
+
 	TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
+
+	// The previous slot's widget, if it holds a Property element whose row sits flush against this slot (no padding or border between)
+	TWeakPtr<SWidget> RowAbove;
+
+	// That slot's own top-line rule: if its row is hidden (e.g. EditConditionHides), the row below takes the line in its place
+	TAttribute<bool> TopLineAbove;
 
 	for (int32 i = 0; i < Slots.Num(); ++i)
 	{
@@ -22,7 +41,49 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 
 		const FEpithSlotActions Actions = Context.IsDesigning() ? EpithDraw::MakeArraySlotActions(MutableSlots, i, StaticStruct()->GetDisplayNameText(), EEpithSlotReorder::Vertical) : FEpithSlotActions();
 
-		TSharedPtr<SWidget> Widget = EpithDraw::DrawSlot(Slot.Child, ChildContext, Actions);
+		FEpithDrawContext SlotContext = ChildContext;
+
+		if (bJoinSpacers)
+		{
+			const FMargin Inset = GetSlotInset(i);
+			FMargin& Reach = SlotContext.SpacerReach;
+
+			// A spacer bar beside this whole group: pass it on across the group to every slot, past this group's border and the slot's inset
+			Reach.Left = Context.SpacerReach.Left > 0.0f ? Context.SpacerReach.Left + GroupBorderPadding.Left + Inset.Left : 0.0f;
+			Reach.Right = Context.SpacerReach.Right > 0.0f ? Context.SpacerReach.Right + GroupBorderPadding.Right + Inset.Right : 0.0f;
+
+			// A filled spacer in the slot before or after this one: the distance from this slot's content to its bar
+			if (i > 0 && EpithDraw::IsFilledSpacer(Slots[i - 1].Child))
+			{
+				Reach.Top = FEpithWindowElement_Spacer::PaddingAlongGroup + GetSlotInset(i - 1).Bottom + Inset.Top;
+			}
+
+			if (i < Slots.Num() - 1 && EpithDraw::IsFilledSpacer(Slots[i + 1].Child))
+			{
+				Reach.Bottom = FEpithWindowElement_Spacer::PaddingAlongGroup + GetSlotInset(i + 1).Top + Inset.Bottom;
+			}
+		}
+
+		// Property rows here get a bottom grid line, and a top one unless a visible property row sits directly above
+		SlotContext.RowEdges.bBottom = true;
+		SlotContext.RowEdges.Top = TAttribute<bool>::CreateLambda([RowAbove, TopLineAbove]()
+		{
+			TSharedPtr<SWidget> Above = RowAbove.Pin();
+
+			if (!Above.IsValid())
+			{
+				return true;
+			}
+
+			// A hidden row above: this row is now the one meeting whatever is above that, so it follows the hidden row's rule
+			return Above->GetVisibility() == EVisibility::Collapsed ? TopLineAbove.Get(true) : false;
+		});
+
+		TSharedPtr<SWidget> Widget = EpithDraw::DrawSlot(Slot.Child, SlotContext, Actions);
+
+		const bool bFlushBelow = i < Slots.Num() - 1 && GetSlotInset(i).Bottom <= 0.0f && GetSlotInset(i + 1).Top <= 0.0f;
+		RowAbove = Widget.IsValid() && bFlushBelow && Slot.Child.GetPtr<FEpithWindowElement_Property>() ? Widget : nullptr;
+		TopLineAbove = SlotContext.RowEdges.Top;
 
 		if (!Widget.IsValid())
 		{

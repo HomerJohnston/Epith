@@ -298,16 +298,21 @@ namespace EpithPropertyRow
 			];
 	}
 
-	TSharedRef<SWidget> MakeChildRows(const TArray<TSharedRef<IDetailTreeNode>>& Children, const TSharedRef<FEpithPropertyDataContainer>& PropertyData, int32 Depth, const TSharedPtr<FEpithColumnLayout>& Columns)
+	/** @param Edges For the first child row; the rest keep only the bottom line, since each sits right under another row. */
+	TSharedRef<SWidget> MakeChildRows(const TArray<TSharedRef<IDetailTreeNode>>& Children, const TSharedRef<FEpithPropertyDataContainer>& PropertyData, int32 Depth, const TSharedPtr<FEpithColumnLayout>& Columns, const FEpithRowEdges& Edges)
 	{
 		TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
 
-		for (const TSharedRef<IDetailTreeNode>& Child : Children)
+		FEpithRowEdges LaterEdges;
+		LaterEdges.bBottom = Edges.bBottom;
+
+		for (int32 ChildIndex = 0; ChildIndex < Children.Num(); ++ChildIndex)
 		{
+			const TSharedRef<IDetailTreeNode>& Child = Children[ChildIndex];
 			const FName ChildKey = GetNodeKey(Child, Child->CreatePropertyHandle());
 
 			TSharedRef<SWidget> ChildWidget = PropertyData->TryClaimChildPath(ChildKey)
-				? Make(Child, PropertyData, Depth, Columns)
+				? Make(Child, PropertyData, Depth, Columns, ChildIndex == 0 ? Edges : LaterEdges)
 				: MakeWarning(FText::Format(LOCTEXT("PropertyRow_ChildDuplicate", "{0} is already shown in this panel"), FText::FromName(ChildKey)), Depth);
 
 			Box->AddSlot()
@@ -334,6 +339,10 @@ namespace EpithPropertyRow
 		FName Key;
 		int32 Depth = 0;
 		TSharedPtr<FEpithColumnLayout> Columns;
+
+		/** Child rows sit under their parent row, so they never get a top line; they keep its bottom line. */
+		bool bBottomEdge = false;
+
 		bool bBuilt = false;
 		TArray<TWeakPtr<IDetailTreeNode>> BuiltChildren;
 
@@ -362,7 +371,10 @@ namespace EpithPropertyRow
 				BuiltChildren.Add(Child);
 			}
 
-			PinnedContainer->SetContent(MakeChildRows(Children, PinnedData.ToSharedRef(), Depth + 1, Columns));
+			FEpithRowEdges ChildEdges;
+			ChildEdges.bBottom = bBottomEdge;
+
+			PinnedContainer->SetContent(MakeChildRows(Children, PinnedData.ToSharedRef(), Depth + 1, Columns, ChildEdges));
 			bBuilt = true;
 
 			// New child rows may be wider than the group's column; measure them now so the column doesn't jump a frame later
@@ -409,7 +421,7 @@ namespace EpithPropertyRow
 		}
 	};
 
-	TSharedRef<SWidget> Make(TSharedRef<IDetailTreeNode> Node, TSharedRef<FEpithPropertyDataContainer> PropertyData, int32 Depth, TSharedPtr<FEpithColumnLayout> Columns)
+	TSharedRef<SWidget> Make(TSharedRef<IDetailTreeNode> Node, TSharedRef<FEpithPropertyDataContainer> PropertyData, int32 Depth, TSharedPtr<FEpithColumnLayout> Columns, const FEpithRowEdges& Edges)
 	{
 		FDetailTreeNode& DetailNode = AsDetailTreeNode(*Node);
 		TSharedPtr<IPropertyHandle> Handle = Node->CreatePropertyHandle();
@@ -429,7 +441,7 @@ namespace EpithPropertyRow
 			return SNew(SBox)
 				.Visibility(MakeNodeVisibility(Node))
 				[
-					WrapIfNotInstanceEditable(MakeChildRows(Children, PropertyData, Depth, Columns), Handle, *PropertyData)
+					WrapIfNotInstanceEditable(MakeChildRows(Children, PropertyData, Depth, Columns, Edges), Handle, *PropertyData)
 				];
 		}
 
@@ -481,6 +493,7 @@ namespace EpithPropertyRow
 			ChildList->Key = Key;
 			ChildList->Depth = Depth;
 			ChildList->Columns = Columns;
+			ChildList->bBottomEdge = Edges.bBottom;
 
 			if (PropertyData->IsExpanded(Key))
 			{
@@ -711,9 +724,13 @@ namespace EpithPropertyRow
 			]
 		];
 
+		// The grid-line color shows through a 1 px gap along the top and/or bottom
 		TSharedRef<SBorder> RowLine = SNew(SBorder)
 			.BorderImage(FAppStyle::Get().GetBrush("DetailsView.GridLine"))
-			.Padding(FMargin(0, 0, 0, 1))
+			.Padding_Lambda([Top = Edges.Top, bBottom = Edges.bBottom]()
+			{
+				return FMargin(0.0f, Top.Get(false) ? 1.0f : 0.0f, 0.0f, bBottom ? 1.0f : 0.0f);
+			})
 			[
 				SNew(SBox)
 				.MinDesiredHeight(RowMinHeight)

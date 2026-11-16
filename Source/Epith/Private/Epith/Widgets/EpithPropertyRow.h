@@ -1,6 +1,7 @@
 ﻿#pragma once
 
 #include "CoreMinimal.h"
+#include "Epith/Widgets/EpithDrawContext.h"
 
 class IDetailTreeNode;
 class SWidget;
@@ -14,6 +15,9 @@ class FEpithColumnLayout;
  */
 namespace EpithPropertyRow
 {
-	/** @param Columns The group's shared column widths, so rows in the same group line up. Null = no alignment. */
-	TSharedRef<SWidget> Make(TSharedRef<IDetailTreeNode> Node, TSharedRef<FEpithPropertyDataContainer> PropertyData, int32 Depth = 0, TSharedPtr<FEpithColumnLayout> Columns = nullptr);
+	/**
+	 * @param Columns The group's shared column widths, so rows in the same group line up. Null = no alignment.
+	 * @param Edges   Grid lines along the row's top and bottom. Child rows (struct members, array elements) keep the bottom line.
+	 */
+	TSharedRef<SWidget> Make(TSharedRef<IDetailTreeNode> Node, TSharedRef<FEpithPropertyDataContainer> PropertyData, int32 Depth = 0, TSharedPtr<FEpithColumnLayout> Columns = nullptr, const FEpithRowEdges& Edges = FEpithRowEdges());
 }

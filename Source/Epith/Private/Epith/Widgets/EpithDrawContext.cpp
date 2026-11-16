@@ -1,5 +1,7 @@
 ﻿#include "Epith/Widgets/EpithDrawContext.h"
 
+#include "Epith/Widgets/EpithWindowElement_Spacer.h"
+
 #include "CoreGlobals.h"
 #include "Epith/Widgets/EpithWindowElement.h"
 #include "Widgets/SNullWidget.h"
@@ -104,6 +106,14 @@ FEpithDrawContext FEpithDrawContext::WithColumns(const FEpithColumnSettings& Set
 {
 	FEpithDrawContext ChildContext = *this;
 	ChildContext.ParentAxis = ChildAxis;
+	ChildContext.SpacerReach = FMargin(0.0f);
+	ChildContext.RowEdges = FEpithRowEdges::Standalone();
 	ChildContext.Columns = MakeShared<FEpithColumnLayout>(Settings.NameColumnWidth, Settings.ValueColumnWidth, &Settings);
 	return ChildContext;
+}
+
+bool EpithDraw::IsFilledSpacer(const TInstancedStruct<FEpithWindowElement>& Slot)
+{
+	const FEpithWindowElement_Spacer* Spacer = Slot.GetPtr<FEpithWindowElement_Spacer>();
+	return Spacer && Spacer->bFilled;
 }
