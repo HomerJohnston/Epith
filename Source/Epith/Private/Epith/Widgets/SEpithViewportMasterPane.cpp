@@ -29,6 +29,9 @@ void SEpithViewportMasterPane::Construct(const FArguments& InArgs)
 
 	PaneBox = SNew(SVerticalBox);
 
+	// The header bar along the top (the actor's name, pin and close buttons)
+	static constexpr float MasterHeaderHeight = 40.0f;
+
 	TSharedRef<SEpithViewportMasterPane> Self = StaticCastSharedRef<SEpithViewportMasterPane>(AsShared());
 
 	ChildSlot
@@ -44,8 +47,10 @@ void SEpithViewportMasterPane::Construct(const FArguments& InArgs)
 			.Padding(0)
 			[
 				SNew(SOverlay)
+				// The sections start below the whole header (MasterHeaderHeight), so the header doesn't cover the top of the first
+				// section's header ribbon
 				+ SOverlay::Slot()
-				.Padding(0, 24, 0, 0)
+				.Padding(0, MasterHeaderHeight - 8, 0, 0)
 				[
 					PaneBox.ToSharedRef()
 				]
@@ -54,7 +59,7 @@ void SEpithViewportMasterPane::Construct(const FArguments& InArgs)
 				.VAlign(VAlign_Top)
 				[
 					SNew(SBox)
-					.HeightOverride(40)
+					.HeightOverride(MasterHeaderHeight)
 					[
 						SNew(SEpithViewportMasterPaneHeader)
 						.Parent(Self)
@@ -112,29 +117,14 @@ void SEpithViewportMasterPane::RebuildPanes()
 	ObjectPanes = UEpithEditorWorldExtension::CreateObjectPanes(Target.Get());
 	BuiltPaneSignature = MakePaneSignature(Target.Get());
 
-	for (int32 i = 0; i < ObjectPanes.Num(); ++i)
+	// Sections sit directly one under the other: each one's header ribbon marks where it starts
+	for (const TSharedRef<SEpithViewportObjectPane>& ObjectPane : ObjectPanes)
 	{
 		PaneBox->AddSlot()
 		.AutoHeight()
 		[
-			ObjectPanes[i]
+			ObjectPane
 		];
-
-		// A solid black bar between panes
-		if (i < ObjectPanes.Num() - 1)
-		{
-			PaneBox->AddSlot()
-			.AutoHeight()
-			[
-				SNew(SBox)
-				.HeightOverride(3.0f)
-				[
-					SNew(SImage)
-					.Image(FAppStyle::GetBrush("WhiteBrush"))
-					.ColorAndOpacity(FLinearColor::Black)
-				]
-			];
-		}
 	}
 }
 

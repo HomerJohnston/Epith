@@ -1532,10 +1532,10 @@ void SEpithPanelDesigner::Redraw()
 			.BorderBackgroundColor(FLinearColor::Black)
 			.Padding(1)
 			[
-			// Same background as a section of the real panel
+			// Same background as a section of the real panel, and the same header ribbon, flush with its top and sides
 			SNew(SBorder)
 			.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
-			.Padding(8)
+			.Padding(0)
 			[
 				SNew(SBox)
 				.MinDesiredWidth(PanelDefinition->GetMinWidth())
@@ -1543,14 +1543,20 @@ void SEpithPanelDesigner::Redraw()
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot()
 					.AutoHeight()
-					.Padding(12, 4, 12, 8)
 					[
-						SNew(STextBlock)
-						.Text(Title)
-						.Font(EpithFonts.Font_ViewportPopup_Title)
+						SNew(SBorder)
+						.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+						.BorderBackgroundColor(EpithViewportObjectPane::HeaderRibbonColor)
+						.Padding(FMargin(20, 6, 20, 6))
+						[
+							SNew(STextBlock)
+							.Text(Title)
+							.Font(EpithFonts.Font_ViewportPopup_Title)
+						]
 					]
 					+ SVerticalBox::Slot()
 					.AutoHeight()
+					.Padding(8)
 					[
 						Content.IsValid() ? Content.ToSharedRef() : SNullWidget::NullWidget
 					]

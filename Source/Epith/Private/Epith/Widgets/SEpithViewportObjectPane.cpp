@@ -164,28 +164,36 @@ void SEpithViewportObjectPane::Draw()
 			Title = PanelDefinition->GetTargetClass()->GetDisplayNameText();
 		}
 
+		// The header sits on a medium-gray ribbon running the full width of the section, flush with its top edge
 		Box->AddSlot()
 		.AutoHeight()
-		.Padding(12, 12, 12, 8)
 		[
-			SNew(SEpithViewportObjectPaneHeader)
-			.Target(Target.Get())
-			.TitleOverride(Title)
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+			.BorderBackgroundColor(EpithViewportObjectPane::HeaderRibbonColor)
+			.Padding(FMargin(20, 6, 20, 6))
+			[
+				SNew(SEpithViewportObjectPaneHeader)
+				.Target(Target.Get())
+				.TitleOverride(Title)
+			]
 		];
 	}
 
 	Box->AddSlot()
 	.AutoHeight()
+	.Padding(8)
 	[
 		Content.ToSharedRef()
 	];
 
 	ChildSlot
 	[
-		// The Details panel's row color (Colors.Panel, #242424)
+		// The Details panel's row color (Colors.Panel, #242424). No padding of its own: the header ribbon reaches its edges,
+		// and the content is padded instead.
 		SNew(SBorder)
 		.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
-		.Padding(8)
+		.Padding(0)
 		[
 			SNew(SBox)
 			.MinDesiredWidth(PanelDefinition.IsValid() ? PanelDefinition->GetMinWidth() : 180.0f)

@@ -6,6 +6,12 @@
 #include "Epith/Misc/EpithPropertyDataContainer.h"
 #include "Epith/Widgets/EpithDrawContext.h"
 
+namespace EpithViewportObjectPane
+{
+	/** The ribbon behind a section's header (and the panel designer's title): a medium gray, #404040. */
+	inline const FLinearColor HeaderRibbonColor = FLinearColor::FromSRGBColor(FColor(64, 64, 64));
+}
+
 class SEpithViewportObjectPane : public SCompoundWidget
 {
 	SLATE_BEGIN_ARGS(SEpithViewportObjectPane) {}
