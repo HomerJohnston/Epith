@@ -7,6 +7,15 @@
 class SBox;
 class SButton;
 class SEpithPropertyPalette;
+
+/** What the innermost hovered element or slot in the preview is, for the label under the panel. Written by its frame as it paints. */
+struct FEpithDesignerHoverNote
+{
+	FText Text;
+
+	/** The frame (GFrameCounter) it was last written in; anything older means nothing is hovered now. */
+	uint64 FrameNumber = 0;
+};
 class SEpithElementDetails;
 class UEpithPanelDefinition;
 struct FEpithPropertyDataContainer;
@@ -98,8 +107,22 @@ protected:
 
 	EActiveTimerReturnType AnimatePalette(double InCurrentTime, float InDeltaTime);
 
+	/** The REAL VIEW tab: a folder tab centred on the designer's bottom edge that pulls the real view up, or pushes it back down. */
+	TSharedRef<SWidget> MakeRealViewTab();
+
+	/** Shows or hides the real view in the lower half, sliding it (bAnimate) or at once. Remembered between sessions. */
+	void SetRealViewOpen(bool bOpen, bool bAnimate);
+
+	EActiveTimerReturnType AnimateRealView(double InCurrentTime, float InDeltaTime);
+
+	/** Draws the panel again in the real view, as the level viewport does (no designer controls). Nothing while it's put away. */
+	void RedrawRealView();
+
 	/** The pane on the left (pulled out by its tab): ELEMENTS and PROPERTIES foldouts, whose rows are dragged onto empty slots. */
 	TSharedRef<SWidget> MakeLeftPane();
+
+	/** "Property: Health - Slot 3 of Vertical Group": what a slot holds, and where it is. Shown under the panel while hovered. */
+	FText DescribeSlot(const TInstancedStruct<FEpithWindowElement>& Slot, const FEpithSlotActions& Actions) const;
 
 	/** The side pane on the right: a scrolling column of foldout sections (ELEMENT, for now). */
 	TSharedRef<SWidget> MakeSidePane();
@@ -125,6 +148,20 @@ protected:
 
 	/** The Properties pane on the left: hidden to start with (unless it was open last time), slid out by its tab. */
 	TSharedPtr<SEpithPropertyPalette> Palette;
+
+	/** The lower half of the preview: the panel as the level viewport draws it. Hidden to start with (unless it was up last time). */
+	TSharedPtr<SBox> RealViewArea;
+	TSharedPtr<SButton> RealViewTabButton;
+	bool bRealViewOpen = false;
+
+	/** How far the real view is pulled up, 0 (hidden) to 1 (exactly half the height). */
+	float RealViewOpenness = 0.0f;
+
+	/** True while it's sliding (AnimateRealView is running). */
+	bool bRealViewSliding = false;
+
+	/** Written by the hovered frame each frame it's painted; read by the label under the panel. */
+	TSharedRef<FEpithDesignerHoverNote> HoverNote = MakeShared<FEpithDesignerHoverNote>();
 	TSharedPtr<SButton> PaletteTabButton;
 	bool bPaletteOpen = false;
 

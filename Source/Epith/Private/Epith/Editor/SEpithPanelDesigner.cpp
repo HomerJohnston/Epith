@@ -3,6 +3,7 @@
 #include "EpithPropertyMenu.h"
 #include "SEpithElementDetails.h"
 #include "SEpithPropertyPalette.h"
+#include "Epith/Widgets/SEpithViewportObjectPane.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Misc/ConfigCacheIni.h"
 #include "ISinglePropertyView.h"
@@ -222,6 +223,10 @@ public:
 		/** While this widget (the group's add button) is hovered, the outline is drawn brighter. */
 		SLATE_ARGUMENT(TWeakPtr<SWidget>, EmphasizeWhileHovered)
 
+		/** While hovered, this goes in HoverNote, for the label under the panel (frames paint outer to inner, so the innermost wins). */
+		SLATE_ARGUMENT(FText, HoverDescription)
+		SLATE_ARGUMENT(TSharedPtr<FEpithDesignerHoverNote>, HoverNote)
+
 		/** Background drawn inside the outline, behind the content (transparent = none). */
 		SLATE_ARGUMENT(FLinearColor, FillColor)
 
@@ -243,6 +248,8 @@ public:
 		bOutlineContent = InArgs._bOutlineContent;
 		EmphasizeWhileHovered = InArgs._EmphasizeWhileHovered;
 		FillColor = InArgs._FillColor;
+		HoverDescription = InArgs._HoverDescription;
+		HoverNote = InArgs._HoverNote;
 		OnSelect = InArgs._OnSelect;
 		IsSelected = InArgs._IsSelected;
 		OnGetContextMenu = InArgs._OnGetContextMenu;
@@ -256,6 +263,13 @@ public:
 
 	int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
 	{
+		// Before the content paints, so a hovered frame inside this one (painted after) gets the last word
+		if (HoverNote.IsValid() && IsHovered() && !HoverDescription.IsEmpty())
+		{
+			HoverNote->Text = HoverDescription;
+			HoverNote->FrameNumber = GFrameCounter;
+		}
+
 		if (FillColor.A > 0.0f)
 		{
 			FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(), FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None, FillColor);
@@ -399,6 +413,8 @@ private:
 	}
 
 	bool bContextMenuOpen = false;
+	FText HoverDescription;
+	TSharedPtr<FEpithDesignerHoverNote> HoverNote;
 	bool bDashed = false;
 	bool bOnlyWhenHovered = false;
 	bool bOutlineContent = false;
@@ -1083,6 +1099,139 @@ EActiveTimerReturnType SEpithPanelDesigner::AnimatePalette(double InCurrentTime,
 	return EActiveTimerReturnType::Continue;
 }
 
+TSharedRef<SWidget> SEpithPanelDesigner::MakeRealViewTab()
+{
+	// A folder tab standing up from the designer's bottom edge: rounded on top, square at the bottom (against the edge or the
+	// real view)
+	static const FSlateRoundedBoxBrush TabBrush(FLinearColor::White, FVector4(6.0f, 6.0f, 0.0f, 0.0f), FSlateColor(FStyleColors::InputOutline), 1.0f);
+
+	return SAssignNew(RealViewTabButton, SButton)
+		.ButtonStyle(FAppStyle::Get(), "NoBorder")
+		.ContentPadding(FMargin(0.0f))
+		.ToolTipText_Lambda([this]()
+		{
+			return bRealViewOpen
+				? LOCTEXT("HideRealViewTooltip", "Put the real view away.")
+				: LOCTEXT("ShowRealViewTooltip", "Pull up the real view: the panel as it will look in the level viewport, without the designer's controls.");
+		})
+		.OnClicked_Lambda([this]()
+		{
+			SetRealViewOpen(!bRealViewOpen, true);
+			return FReply::Handled();
+		})
+		[
+			SNew(SBorder)
+			.BorderImage(&TabBrush)
+			.Padding(FMargin(14.0f, 4.0f, 14.0f, 3.0f))
+			.BorderBackgroundColor_Lambda([this]() -> FSlateColor
+			{
+				if (bRealViewOpen)
+				{
+					return FSlateColor(FStyleColors::Primary); // pulled up
+				}
+
+				return RealViewTabButton.IsValid() && RealViewTabButton->IsHovered() ? FSlateColor(FStyleColors::Hover) : FSlateColor(FStyleColors::Dropdown);
+			})
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("RealViewTab", "REAL VIEW"))
+				.Font(FAppStyle::GetFontStyle("BoldFont"))
+				.ColorAndOpacity_Lambda([this]() -> FSlateColor
+				{
+					return bRealViewOpen || (RealViewTabButton.IsValid() && RealViewTabButton->IsHovered()) ? FSlateColor::UseForeground() : FSlateColor::UseSubduedForeground();
+				})
+			]
+		];
+}
+
+void SEpithPanelDesigner::SetRealViewOpen(bool bOpen, bool bAnimate)
+{
+	bRealViewOpen = bOpen;
+
+	if (GConfig)
+	{
+		GConfig->SetBool(EpithDesigner::PaletteConfigSection, TEXT("RealViewOpen"), bRealViewOpen, GEditorPerProjectIni);
+	}
+
+	// Only drawn while it's showing (it has its own property rows to build); up to date before it slides into view
+	if (bOpen)
+	{
+		RedrawRealView();
+	}
+
+	if (!bAnimate)
+	{
+		RealViewOpenness = bOpen ? 1.0f : 0.0f;
+		return;
+	}
+
+	if (!bRealViewSliding)
+	{
+		bRealViewSliding = true;
+		RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SEpithPanelDesigner::AnimateRealView));
+	}
+}
+
+EActiveTimerReturnType SEpithPanelDesigner::AnimateRealView(double InCurrentTime, float InDeltaTime)
+{
+	static constexpr float SlideSeconds = 0.18f;
+
+	const float Target = bRealViewOpen ? 1.0f : 0.0f;
+	RealViewOpenness = FMath::FInterpConstantTo(RealViewOpenness, Target, InDeltaTime, 1.0f / SlideSeconds);
+
+	if (FMath::IsNearlyEqual(RealViewOpenness, Target))
+	{
+		RealViewOpenness = Target;
+		bRealViewSliding = false;
+
+		// Put away: let go of its rows until it's pulled up again
+		if (!bRealViewOpen && RealViewArea.IsValid())
+		{
+			RealViewArea->SetContent(SNullWidget::NullWidget);
+		}
+
+		return EActiveTimerReturnType::Stop;
+	}
+
+	return EActiveTimerReturnType::Continue;
+}
+
+void SEpithPanelDesigner::RedrawRealView()
+{
+	if (!RealViewArea.IsValid())
+	{
+		return;
+	}
+
+	RealViewArea->SetContent(SNullWidget::NullWidget);
+
+	UEpithPanelDefinition* PanelDefinition = Definition.Get();
+	UClass* TargetClass = PanelDefinition ? PanelDefinition->GetTargetClass() : nullptr;
+
+	if (!bRealViewOpen || !TargetClass)
+	{
+		return;
+	}
+
+	// The viewport's own section widget, given the class defaults (the designer's preview object) and this definition, and no
+	// designer: exactly what a level object's panel draws, so the two can't drift apart
+	RealViewArea->SetContent(
+		SNew(SBox)
+		.HAlign(HAlign_Center)
+		.VAlign(VAlign_Top)
+		[
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+			.BorderBackgroundColor(FLinearColor::Black)
+			.Padding(1)
+			[
+				SNew(SEpithViewportObjectPane)
+				.Target(TargetClass->GetDefaultObject())
+				.PanelDefinition(PanelDefinition)
+			]
+		]);
+}
+
 void SEpithPanelDesigner::Construct(const FArguments& InArgs, UEpithPanelDefinition* InDefinition)
 {
 	Definition = InDefinition;
@@ -1144,30 +1293,98 @@ void SEpithPanelDesigner::Construct(const FArguments& InArgs, UEpithPanelDefinit
 				]
 			]
 
-			// The preview: the only part whose width follows the window's
+			// The preview: the only part whose width follows the window's. The designer on top; the REAL VIEW below it, pulled up by
+			// its tab to take exactly the lower half (not resizable), or put away to give the designer the whole height.
 			+ SSplitter::Slot()
 			.Value(1.0f)
 			[
-				SNew(SOverlay)
-				+ SOverlay::Slot()
+				SNew(SVerticalBox)
+
+				// The designer
+				+ SVerticalBox::Slot()
+				.FillHeight(1.0f)
 				[
-					SNew(SScrollBox)
-					+ SScrollBox::Slot()
-					// Extra room on the left for the Properties tab, so it never covers the panel
-					.Padding(FMargin(40, 16, 16, 16))
+					SNew(SOverlay)
+					+ SOverlay::Slot()
 					[
-						SAssignNew(PreviewArea, SBox)
+						SNew(SScrollBox)
+						+ SScrollBox::Slot()
+						// Extra room on the left for the Properties tab, so it never covers the panel (and as much on the right, so
+						// the centred panel sits in the middle)
+						.Padding(FMargin(40, 16, 40, 16))
+						[
+							SNew(SVerticalBox)
+							+ SVerticalBox::Slot()
+							.AutoHeight()
+							[
+								SAssignNew(PreviewArea, SBox)
+							]
+
+							// What's under the cursor in the panel above (e.g. "Property: Health - Slot 3 of Vertical Group")
+							+ SVerticalBox::Slot()
+							.AutoHeight()
+							.HAlign(HAlign_Center)
+							.Padding(0, 6, 0, 0)
+							[
+								SNew(STextBlock)
+								.ColorAndOpacity(FSlateColor::UseSubduedForeground())
+								.Text_Lambda([this]()
+								{
+									// Frames write the note as they paint, which is before this label paints; an older note is a leftover
+									return HoverNote->FrameNumber + 1 >= GFrameCounter ? HoverNote->Text : FText::GetEmpty();
+								})
+							]
+						]
+					]
+
+					// The Properties tab, floating on the preview's left edge: on the pane's right side when it's open, so opening the
+					// pane pulls the tab out with it
+					+ SOverlay::Slot()
+					.HAlign(HAlign_Left)
+					.VAlign(VAlign_Top)
+					.Padding(0.0f, 16.0f, 0.0f, 0.0f)
+					[
+						MakePaletteTab()
+					]
+
+					// The REAL VIEW tab, centred on the designer's bottom edge: on top of the real view when it's up, so pulling it
+					// up carries the tab with it
+					+ SOverlay::Slot()
+					.HAlign(HAlign_Center)
+					.VAlign(VAlign_Bottom)
+					[
+						MakeRealViewTab()
 					]
 				]
 
-				// The Properties tab, floating on the preview's left edge: on the pane's right side when it's open, so opening the
-				// pane pulls the tab out with it
-				+ SOverlay::Slot()
-				.HAlign(HAlign_Left)
-				.VAlign(VAlign_Top)
-				.Padding(0.0f, 16.0f, 0.0f, 0.0f)
+				// The REAL VIEW: the panel as it will look in the level viewport, with no designer controls. Its share of the height
+				// grows from nothing to exactly half (RealViewOpenness) as it slides up.
+				+ SVerticalBox::Slot()
+				.FillHeight(TAttribute<float>::CreateLambda([this]() { return FMath::InterpEaseInOut(0.0f, 1.0f, RealViewOpenness, 2.0f); }))
 				[
-					MakePaletteTab()
+					SNew(SBox)
+					.Clipping(EWidgetClipping::ClipToBounds)
+					.Visibility_Lambda([this]() { return RealViewOpenness > 0.0f ? EVisibility::Visible : EVisibility::Collapsed; })
+					[
+						// A thin black line along its top, where it meets the designer
+						SNew(SBorder)
+						.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+						.BorderBackgroundColor(FLinearColor::Black)
+						.Padding(FMargin(0, 1, 0, 0))
+						[
+							SNew(SBorder)
+							.BorderImage(FAppStyle::GetBrush("Brushes.Recessed"))
+							.Padding(0)
+							[
+								SNew(SScrollBox)
+								+ SScrollBox::Slot()
+								.Padding(16)
+								[
+									SAssignNew(RealViewArea, SBox)
+								]
+							]
+						]
+					]
 				]
 			]
 
@@ -1204,6 +1421,11 @@ void SEpithPanelDesigner::Construct(const FArguments& InArgs, UEpithPanelDefinit
 
 		GConfig->GetFloat(EpithDesigner::PaletteConfigSection, TEXT("SidePaneWidth"), SidePaneWidth, GEditorPerProjectIni);
 		SidePaneWidth = FMath::Max(SidePaneWidth, MinPaletteWidth);
+
+		bool bRealViewWasOpen = false;
+		GConfig->GetBool(EpithDesigner::PaletteConfigSection, TEXT("RealViewOpen"), bRealViewWasOpen, GEditorPerProjectIni);
+		bRealViewOpen = bRealViewWasOpen;
+		RealViewOpenness = bRealViewWasOpen ? 1.0f : 0.0f;
 
 		bool bWasOpen = false;
 		GConfig->GetBool(EpithDesigner::PaletteConfigSection, TEXT("PropertiesPaneOpen"), bWasOpen, GEditorPerProjectIni);
@@ -1253,6 +1475,11 @@ void SEpithPanelDesigner::Redraw()
 {
 	// Let go of the old preview first: its property rows belong to the old PreviewData
 	PreviewArea->SetContent(SNullWidget::NullWidget);
+
+	if (RealViewArea.IsValid())
+	{
+		RealViewArea->SetContent(SNullWidget::NullWidget);
+	}
 	PendingAddButton.Reset();
 	PreviewData.Reset();
 	DrawnSlots.Reset();
@@ -1294,10 +1521,10 @@ void SEpithPanelDesigner::Redraw()
 
 	const FText Title = PanelDefinition->GetTitle().IsEmpty() ? TargetClass->GetDisplayNameText() : PanelDefinition->GetTitle();
 
-	// Styled like the object pane in the viewport, so what you build is what you get
+	// Styled like the object pane in the viewport, so what you build is what you get. Centred in the designer.
 	PreviewArea->SetContent(
 		SNew(SBox)
-		.HAlign(HAlign_Left)
+		.HAlign(HAlign_Center)
 		[
 			// A thin black outline around the whole panel, so its edges show against the editor background
 			SNew(SBorder)
@@ -1334,6 +1561,8 @@ void SEpithPanelDesigner::Redraw()
 
 	// Line up property columns on the first frame (no one-frame flicker)
 	FEpithColumnLayout::MeasureNow(PreviewArea.ToSharedRef());
+
+	RedrawRealView();
 
 	UpdateSelection();
 }
@@ -1452,6 +1681,8 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 	TSharedRef<SWidget> Frame = SNew(SEpithDesignerFrame)
 		.bDashed(true)
 		.FillColor(FLinearColor(1.0f, 0.85f, 0.2f, 0.08f))
+		.HoverDescription(DescribeSlot(Slot, Actions))
+		.HoverNote(HoverNote)
 		.OnSelect_Lambda([this, SlotPtr]()
 		{
 			Select(SlotPtr);
@@ -1510,6 +1741,8 @@ TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWind
 		.bOnlyWhenHovered(true)
 		.bOutlineContent(true)
 		.EmphasizeWhileHovered(AddButton)
+		.HoverDescription(DescribeSlot(Slot, Actions))
+		.HoverNote(HoverNote)
 		.OnSelect_Lambda([this, SlotPtr]()
 		{
 			Select(SlotPtr);
@@ -1542,6 +1775,51 @@ TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWind
 	}
 
 	return WithDragHandle(Frame, Actions, DragLabel);
+}
+
+FText SEpithPanelDesigner::DescribeSlot(const TInstancedStruct<FEpithWindowElement>& Slot, const FEpithSlotActions& Actions) const
+{
+	// What it holds: the element type, and for some a detail that tells them apart
+	FText What = Slot.GetScriptStruct() ? Slot.GetScriptStruct()->GetDisplayNameText() : LOCTEXT("Describe_Empty", "Empty slot");
+
+	if (const FEpithWindowElement_Property* PropertyElement = Slot.GetPtr<FEpithWindowElement_Property>())
+	{
+		const FName Path = PropertyElement->PropertySelector.GetPropertyPath();
+
+		if (!Path.IsNone())
+		{
+			What = FText::Format(LOCTEXT("Describe_Detail", "{0}: {1}"), What, FText::FromName(Path));
+		}
+	}
+	else if (const FEpithWindowElement_SpecialControl* ControlElement = Slot.GetPtr<FEpithWindowElement_SpecialControl>())
+	{
+		if (const UScriptStruct* ControlType = ControlElement->Control.GetScriptStruct())
+		{
+			What = FText::Format(LOCTEXT("Describe_Detail", "{0}: {1}"), What, ControlType->GetDisplayNameText());
+		}
+	}
+	else if (const FEpithWindowElement_Foldout* FoldoutElement = Slot.GetPtr<FEpithWindowElement_Foldout>())
+	{
+		if (!FoldoutElement->FoldoutTitle.IsEmpty())
+		{
+			What = FText::Format(LOCTEXT("Describe_Detail", "{0}: {1}"), What, FText::FromString(FoldoutElement->FoldoutTitle));
+		}
+	}
+
+	// Where it is: which slot of which group (counted from 1), or the panel's root
+	if (!Actions.ParentName.IsEmpty() && Actions.Index != INDEX_NONE)
+	{
+		return FText::Format(LOCTEXT("Describe_InGroup", "{0} - Slot {1} of {2}"), What, FText::AsNumber(Actions.Index + 1), Actions.ParentName);
+	}
+
+	const UEpithPanelDefinition* PanelDefinition = Definition.Get();
+
+	if (PanelDefinition && &Slot == &const_cast<UEpithPanelDefinition*>(PanelDefinition)->GetRootForEditing())
+	{
+		return FText::Format(LOCTEXT("Describe_Root", "{0} - Root"), What);
+	}
+
+	return What;
 }
 
 void SEpithPanelDesigner::NoteDrawnSlot(TInstancedStruct<FEpithWindowElement>& Slot, const FEpithSlotActions& Actions)
