@@ -27,7 +27,6 @@ public:
 private:
 	TSharedRef<SDockTab> SpawnDetailsTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnDesignerTab(const FSpawnTabArgs& Args);
-	TSharedRef<SDockTab> SpawnElementTab(const FSpawnTabArgs& Args);
 
 	TWeakObjectPtr<UEpithPanelDefinition> Definition;
 
@@ -35,10 +34,9 @@ private:
 
 	TSharedPtr<SEpithPanelDesigner> Designer;
 
-	/** Settings of the element selected in the designer. */
+	/** Settings of the element selected in the designer, shown in the designer's side pane. */
 	TSharedPtr<SEpithElementDetails> ElementDetails;
 
 	static const FName DetailsTabId;
 	static const FName DesignerTabId;
-	static const FName ElementTabId;
 };

@@ -108,14 +108,6 @@ namespace EpithPropertyMenu
 	/** Indent per nesting level: a struct's members sit one level in from the struct, and so on. */
 	constexpr float IndentPerLevel = 12.0f;
 
-	/** What the tree lines draw in one indent column of a row. */
-	enum class ETreeLine : uint8
-	{
-		Empty,   // nothing
-		Through, // │  an ancestor's later siblings continue below
-		Tee,     // ├  this row, with more siblings below
-		Elbow,   // └  this row, the last of its siblings
-	};
 
 	/** Tree lines down the left of a nested row: one indent column per level. */
 	class SEpithTreeLines : public SLeafWidget
@@ -314,31 +306,58 @@ TSet<FName> EpithPropertyMenu::GatherUsedPaths(const UEpithPanelDefinition* Defi
 	return Paths;
 }
 
-TSharedRef<SWidget> EpithPropertyMenu::Make(UClass* TargetClass, TFunction<void(FName)> OnPicked, const TSet<FName>& UsedPaths)
+TSharedRef<SWidget> EpithPropertyMenu::MakeTreeLines(const TArray<ETreeLine>& Columns)
 {
+	return SNew(SEpithTreeLines).Columns(Columns);
+}
+
+FText EpithPropertyMenu::GetFromDefaultsNote(const UClass* TargetClass)
+{
+	return FText::Format(
+		LOCTEXT("PropertySelector_UsingDefaults", "No {0} found in the open level, so this list comes from the class defaults. Instance-only properties are missing and some defaults-only properties may not appear in the panel. Place one in the level for an exact list."),
+		TargetClass ? TargetClass->GetDisplayNameText() : FText::GetEmpty());
+}
+
+FText EpithPropertyMenu::AddUsedNote(const FText& ToolTip)
+{
+	return FText::Format(LOCTEXT("PropertySelector_AlreadyUsed", "{0}\n\nAlready shown by another Property element in this panel."), ToolTip);
+}
+
+FSlateColor EpithPropertyMenu::GetRowColor(bool bUsed, bool bInherited)
+{
+	// Green: already shown by a Property element in this panel. Dimmer: inherited from a parent class. Both: dimmer green.
+	return bUsed ? FSlateColor(EStyleColor::AccentGreen) : bInherited ? FSlateColor::UseSubduedForeground() : FSlateColor::UseForeground();
+}
+
+float EpithPropertyMenu::GetRowOpacity(bool bUsed, bool bInherited)
+{
+	return bUsed && bInherited ? 0.6f : 1.0f;
+}
+
+EpithPropertyMenu::FList EpithPropertyMenu::GatherList(UClass* TargetClass)
+{
+	FList List;
+
 	if (!TargetClass)
 	{
-		return MakeMessage(LOCTEXT("PropertySelector_NoTargetClass", "Set the panel definition's Target Class first."));
+		return List;
 	}
 
-	bool bIsInstance = false;
-	UObject* SampleObject = FindSampleObject(TargetClass, bIsInstance);
+	UObject* SampleObject = FindSampleObject(TargetClass, List.bFromInstance);
 
 	FEpithPropertyDataContainer PropertyData(SampleObject);
 
 	// One section per class that declares top-level properties (the target class and its parents). Properties nested in a
 	// struct, array etc. are listed right under that property, indented, in the same section.
-	struct FMenuRow
+	struct FGatheredRow
 	{
 		FName Path;
 		TArray<FString> Segments;
 		TSharedPtr<IPropertyHandle> Handle;
+		const UClass* InheritedFrom = nullptr;
 	};
 
-	TMap<const UClass*, TArray<FMenuRow>> RowsBySection;
-
-	// Paths whose top-level property is declared on a parent class of the target class, not on the target class itself
-	TMap<FName, const UClass*> InheritedFrom;
+	TMap<const UClass*, TArray<FGatheredRow>> RowsBySection;
 
 	for (const auto& [Path, Handle] : PropertyData.GetPropertyHandles())
 	{
@@ -364,56 +383,40 @@ TSharedRef<SWidget> EpithPropertyMenu::Make(UClass* TargetClass, TFunction<void(
 			continue;
 		}
 
-		if (TopLevelOwnerClass && TopLevelOwnerClass != TargetClass)
-		{
-			InheritedFrom.Add(Path, TopLevelOwnerClass);
-		}
+		// Declared on a parent class of the target class, not on the target class itself
+		const UClass* InheritedFrom = TopLevelOwnerClass && TopLevelOwnerClass != TargetClass ? TopLevelOwnerClass : nullptr;
 
-		RowsBySection.FindOrAdd(TopLevelOwnerClass).Add({ Path, GetPathSegments(Path), Handle });
+		RowsBySection.FindOrAdd(TopLevelOwnerClass).Add({ Path, GetPathSegments(Path), Handle, InheritedFrom });
 	}
 
 	// The target class first, then its parent, that class's parent, and so on. Anything without a top-level class goes last.
-	TArray<const UClass*> Sections;
-	RowsBySection.GetKeys(Sections);
+	TArray<const UClass*> SectionClasses;
+	RowsBySection.GetKeys(SectionClasses);
 
 	// Taken out before sorting (TArray::Sort dereferences pointers) and put back at the end
-	Sections.Remove(nullptr);
+	SectionClasses.Remove(nullptr);
 
-	Sections.Sort([] (const UClass& Left, const UClass& Right)
+	SectionClasses.Sort([] (const UClass& Left, const UClass& Right)
 	{
 		return GetInheritanceDepth(&Left) > GetInheritanceDepth(&Right);
 	});
 
 	if (RowsBySection.Contains(nullptr))
 	{
-		Sections.Add(nullptr);
+		SectionClasses.Add(nullptr);
 	}
 
-	FMenuBuilder MenuBuilder(true, nullptr);
-
-	if (!bIsInstance)
+	for (const UClass* SectionClass : SectionClasses)
 	{
-		MenuBuilder.AddWidget(MakeMessage(FText::Format(
-			LOCTEXT("PropertySelector_UsingDefaults", "No {0} found in the open level, so this list comes from the class defaults. Instance-only properties are missing and some defaults-only properties may not appear in the panel. Place one in the level for an exact list."),
-			TargetClass->GetDisplayNameText())), FText::GetEmpty());
-	}
+		TArray<FGatheredRow>& Rows = RowsBySection[SectionClass];
 
-	if (Sections.Num() == 0)
-	{
-		MenuBuilder.AddWidget(MakeMessage(LOCTEXT("PropertySelector_NoProperties", "No editable properties found.")), FText::GetEmpty());
-	}
-
-	for (const UClass* Section : Sections)
-	{
-		TArray<FMenuRow>& Rows = RowsBySection[Section];
-
-		Rows.Sort([] (const FMenuRow& Left, const FMenuRow& Right)
+		Rows.Sort([] (const FGatheredRow& Left, const FGatheredRow& Right)
 		{
 			return IsBeforeInTree(Left.Segments, Right.Segments);
 		});
 
 		// Work out the tree lines. A row is the last of its siblings if the next row at its level or above isn't a sibling.
-		auto GetDepth = [](const FMenuRow& Row) { return FMath::Max(0, Row.Segments.Num() - 1); };
+		auto GetDepth = [](const FGatheredRow& Row) { return FMath::Max(0, Row.Segments.Num() - 1); };
 
 		TArray<bool> IsLastSibling;
 		IsLastSibling.Init(true, Rows.Num());
@@ -449,66 +452,92 @@ TSharedRef<SWidget> EpithPropertyMenu::Make(UClass* TargetClass, TFunction<void(
 		// Whether the most recent row at each depth was the last of its siblings; its column keeps a line going if it wasn't
 		TArray<bool> LastAtDepth;
 
-		MenuBuilder.BeginSection(NAME_None, Section ? Section->GetDisplayNameText() : LOCTEXT("PropertySelector_OtherSection", "Other"));
+		FListSection& Section = List.Sections.AddDefaulted_GetRef();
+		Section.Heading = SectionClass ? SectionClass->GetDisplayNameText() : LOCTEXT("PropertySelector_OtherSection", "Other");
 
 		for (int32 RowIndex = 0; RowIndex < Rows.Num(); ++RowIndex)
 		{
-			const FMenuRow& Row = Rows[RowIndex];
-			const FName Path = Row.Path;
-			const TSharedPtr<IPropertyHandle>& Handle = Row.Handle;
+			const FGatheredRow& Gathered = Rows[RowIndex];
+			FListRow& Row = Section.Rows.AddDefaulted_GetRef();
+
+			Row.Path = Gathered.Path;
+			Row.InheritedFrom = Gathered.InheritedFrom;
 
 			// Nested rows sit under the property they belong to, so they only need their own name
-			const FText Label = FText::FromString(Row.Segments.Num() > 0 ? Row.Segments.Last() : Path.ToString());
-			const int32 NestingLevel = GetDepth(Row);
+			Row.Label = FText::FromString(Gathered.Segments.Num() > 0 ? Gathered.Segments.Last() : Gathered.Path.ToString());
+			Row.NestingLevel = GetDepth(Gathered);
 
-			TArray<ETreeLine> TreeColumns;
-
-			for (int32 Level = 1; Level < NestingLevel; ++Level)
+			for (int32 Level = 1; Level < Row.NestingLevel; ++Level)
 			{
 				const bool bAncestorWasLast = !LastAtDepth.IsValidIndex(Level) || LastAtDepth[Level];
-				TreeColumns.Add(bAncestorWasLast ? ETreeLine::Empty : ETreeLine::Through);
+				Row.TreeColumns.Add(bAncestorWasLast ? ETreeLine::Empty : ETreeLine::Through);
 			}
 
-			if (NestingLevel > 0)
+			if (Row.NestingLevel > 0)
 			{
-				TreeColumns.Add(IsLastSibling[RowIndex] ? ETreeLine::Elbow : ETreeLine::Tee);
+				Row.TreeColumns.Add(IsLastSibling[RowIndex] ? ETreeLine::Elbow : ETreeLine::Tee);
 			}
 
 			// Levels with no row drawn (e.g. a parent the details system hides) count as finished, so they get no line
-			while (LastAtDepth.Num() <= NestingLevel)
+			while (LastAtDepth.Num() <= Row.NestingLevel)
 			{
 				LastAtDepth.Add(true);
 			}
 
-			LastAtDepth[NestingLevel] = IsLastSibling[RowIndex];
+			LastAtDepth[Row.NestingLevel] = IsLastSibling[RowIndex];
 
-			FText ToolTip = FText::Format(LOCTEXT("PropertySelector_PathToolTip", "{0}\n\nPath: {1}"), Handle->GetToolTipText(), FText::FromName(Path));
+			Row.ToolTip = FText::Format(LOCTEXT("PropertySelector_PathToolTip", "{0}\n\nPath: {1}"), Gathered.Handle->GetToolTipText(), FText::FromName(Gathered.Path));
 
-			if (FEpithPropertyDataContainer::FindInstanceEditBlocker(Handle))
+			if (FEpithPropertyDataContainer::FindInstanceEditBlocker(Gathered.Handle))
 			{
-				ToolTip = FText::Format(LOCTEXT("PropertySelector_ReadOnlyNote", "{0}\n\nNot editable on placed instances, so it will be read-only in the panel."), ToolTip);
+				Row.ToolTip = FText::Format(LOCTEXT("PropertySelector_ReadOnlyNote", "{0}\n\nNot editable on placed instances, so it will be read-only in the panel."), Row.ToolTip);
 			}
+
+			if (Row.InheritedFrom)
+			{
+				Row.ToolTip = FText::Format(LOCTEXT("PropertySelector_Inherited", "{0}\n\nInherited from {1}."), Row.ToolTip, Row.InheritedFrom->GetDisplayNameText());
+			}
+		}
+	}
+
+	return List;
+}
+
+TSharedRef<SWidget> EpithPropertyMenu::Make(UClass* TargetClass, TFunction<void(FName)> OnPicked, const TSet<FName>& UsedPaths)
+{
+	if (!TargetClass)
+	{
+		return MakeMessage(LOCTEXT("PropertySelector_NoTargetClass", "Set the panel definition's Target Class first."));
+	}
+
+	const FList List = GatherList(TargetClass);
+
+	FMenuBuilder MenuBuilder(true, nullptr);
+
+	if (!List.bFromInstance)
+	{
+		MenuBuilder.AddWidget(MakeMessage(GetFromDefaultsNote(TargetClass)), FText::GetEmpty());
+	}
+
+	if (List.Sections.Num() == 0)
+	{
+		MenuBuilder.AddWidget(MakeMessage(LOCTEXT("PropertySelector_NoProperties", "No editable properties found.")), FText::GetEmpty());
+	}
+
+	for (const FListSection& Section : List.Sections)
+	{
+		MenuBuilder.BeginSection(NAME_None, Section.Heading);
+
+		for (const FListRow& Row : Section.Rows)
+		{
+			const FName Path = Row.Path;
+			const bool bUsed = UsedPaths.Contains(Path);
+			const bool bInherited = Row.InheritedFrom != nullptr;
 
 			const FUIAction PickAction(FExecuteAction::CreateLambda([OnPicked, Path]
 			{
 				OnPicked(Path);
 			}));
-
-			const bool bUsed = UsedPaths.Contains(Path);
-			const UClass* const* ParentClass = InheritedFrom.Find(Path);
-
-			if (bUsed)
-			{
-				ToolTip = FText::Format(LOCTEXT("PropertySelector_AlreadyUsed", "{0}\n\nAlready shown by another Property element in this panel."), ToolTip);
-			}
-
-			if (ParentClass)
-			{
-				ToolTip = FText::Format(LOCTEXT("PropertySelector_Inherited", "{0}\n\nInherited from {1}."), ToolTip, (*ParentClass)->GetDisplayNameText());
-			}
-
-			// Green: already shown by another Property element in this panel. Dimmer: inherited from a parent class. Both: dimmer green.
-			const FSlateColor TextColor = bUsed ? FSlateColor(EStyleColor::AccentGreen) : ParentClass ? FSlateColor::UseSubduedForeground() : FSlateColor::UseForeground();
 
 			MenuBuilder.AddMenuEntry(
 				PickAction,
@@ -517,22 +546,21 @@ TSharedRef<SWidget> EpithPropertyMenu::Make(UClass* TargetClass, TFunction<void(
 				.AutoWidth()
 				.VAlign(VAlign_Fill)
 				[
-					SNew(SEpithTreeLines)
-					.Columns(TreeColumns)
+					MakeTreeLines(Row.TreeColumns)
 				]
 				+ SHorizontalBox::Slot()
 				.AutoWidth()
 				.VAlign(VAlign_Center)
-				.Padding(NestingLevel > 0 ? 3.0f : 0.0f, 0.0f, 0.0f, 0.0f)
+				.Padding(Row.NestingLevel > 0 ? 3.0f : 0.0f, 0.0f, 0.0f, 0.0f)
 				[
 					SNew(STextBlock)
-					.Text(Label)
+					.Text(Row.Label)
 					.TextStyle(&FAppStyle::Get(), "Menu.Label")
-					.ColorAndOpacity(TextColor)
-					.RenderOpacity(bUsed && ParentClass ? 0.6f : 1.0f)
+					.ColorAndOpacity(GetRowColor(bUsed, bInherited))
+					.RenderOpacity(GetRowOpacity(bUsed, bInherited))
 				],
 				NAME_None,
-				ToolTip);
+				bUsed ? AddUsedNote(Row.ToolTip) : Row.ToolTip);
 		}
 
 		MenuBuilder.EndSection();

@@ -10,7 +10,7 @@ class UEpithPanelDefinition;
 struct FEpithWindowElement;
 
 /**
- * The panel editor's Element tab: a small Details view for whatever is selected in the panel designer.
+ * The panel designer side pane's ELEMENT section: a small Details view for whatever is selected in the preview.
  *
  * Shows two sections: the slot's own settings (e.g. a Vertical Group slot's Border and Padding, a tab's name), if the element
  * sits in a group, and the element's settings. Child elements are hidden here; select them in the designer instead.

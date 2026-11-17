@@ -237,6 +237,20 @@ void FEpithStyle::SetupStyles()
 	EPITH_DEFINE_BRUSH(FSlateBoxBrush,			Background_ViewportMasterPanelHeader,	"Background_ViewportMasterPanelHeader", ".png",	FMargin(10.f/16.f, 4.f/16.f, 4.f/16.f, 12.f/16.f), EpithColor::White);
 
 	// ============================================================================================
+	// ELEMENT TYPE ICONS: the panel designer's ELEMENTS list. The engine's own UMG widget icons (Engine/Content/Editor/Slate/UMG),
+	// registered here so they don't depend on the UMG editor's style being loaded.
+	// ============================================================================================
+	// Epith's own: a downward triangle, like an open foldout's arrow
+	StyleInstance->Set("Epith.ElementIcon.Foldout",			new IMAGE_BRUSH_SVG("Icon_Foldout",						CoreStyleConstants::Icon16x16));
+	StyleInstance->Set("Epith.ElementIcon.VerticalGroup",	new CORE_IMAGE_BRUSH_SVG("UMG/VerticalBox",			CoreStyleConstants::Icon16x16));
+	StyleInstance->Set("Epith.ElementIcon.HorizontalGroup",	new CORE_IMAGE_BRUSH_SVG("UMG/HorizontalBox",		CoreStyleConstants::Icon16x16));
+	// The engine's UMG/WidgetSwitcher icon turned on its side (a copy in Epith's Resources), so its tabs run along the top
+	StyleInstance->Set("Epith.ElementIcon.TabbedGroup",		new IMAGE_BRUSH_SVG("Icon_TabbedGroup",					CoreStyleConstants::Icon16x16));
+	StyleInstance->Set("Epith.ElementIcon.Property",		new CORE_IMAGE_BRUSH_SVG("UMG/SinglePropertyView",	CoreStyleConstants::Icon16x16));
+	StyleInstance->Set("Epith.ElementIcon.SpecialControl",	new CORE_IMAGE_BRUSH_SVG("UMG/Button",				CoreStyleConstants::Icon16x16));
+	StyleInstance->Set("Epith.ElementIcon.Spacer",			new CORE_IMAGE_BRUSH_SVG("UMG/Spacer",				CoreStyleConstants::Icon16x16));
+
+	// ============================================================================================
 	// SLIDER STYLES
 	// ============================================================================================
 

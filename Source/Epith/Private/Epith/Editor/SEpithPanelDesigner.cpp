@@ -2,6 +2,9 @@
 
 #include "EpithPropertyMenu.h"
 #include "SEpithElementDetails.h"
+#include "SEpithPropertyPalette.h"
+#include "Brushes/SlateRoundedBoxBrush.h"
+#include "Misc/ConfigCacheIni.h"
 #include "ISinglePropertyView.h"
 #include "PropertyEditorModule.h"
 #include "ScopedTransaction.h"
@@ -21,6 +24,7 @@
 #include "Framework/Application/SlateApplication.h"
 #include "Framework/MultiBox/MultiBoxBuilder.h"
 #include "Styling/AppStyle.h"
+#include "Styling/CoreStyle.h"
 #include "Styling/StyleColors.h"
 #include "UObject/UObjectIterator.h"
 #include "DragAndDrop/DecoratedDragDropOp.h"
@@ -36,6 +40,7 @@
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SScrollBox.h"
 #include "Widgets/Layout/SSeparator.h"
+#include "Widgets/Layout/SSplitter.h"
 #include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "EpithDesigner"
@@ -61,6 +66,24 @@ namespace EpithDesigner
 		};
 
 		return Types;
+	}
+
+	/** An element type's icon in the ELEMENTS list (the engine's matching UMG widget icon, registered in FEpithStyle). */
+	const FSlateBrush* GetElementTypeIcon(const UScriptStruct* Type)
+	{
+		static const TMap<const UScriptStruct*, FName> IconNames =
+		{
+			{ FEpithWindowElement_Foldout::StaticStruct(),			TEXT("Epith.ElementIcon.Foldout") },
+			{ FEpithWindowElement_VerticalGroup::StaticStruct(),	TEXT("Epith.ElementIcon.VerticalGroup") },
+			{ FEpithWindowElement_HorizontalGroup::StaticStruct(),	TEXT("Epith.ElementIcon.HorizontalGroup") },
+			{ FEpithWindowElement_TabbedGroup::StaticStruct(),		TEXT("Epith.ElementIcon.TabbedGroup") },
+			{ FEpithWindowElement_Property::StaticStruct(),			TEXT("Epith.ElementIcon.Property") },
+			{ FEpithWindowElement_SpecialControl::StaticStruct(),	TEXT("Epith.ElementIcon.SpecialControl") },
+			{ FEpithWindowElement_Spacer::StaticStruct(),			TEXT("Epith.ElementIcon.Spacer") },
+		};
+
+		const FName* IconName = IconNames.Find(Type);
+		return IconName ? FEpithStyle::Get().GetBrush(*IconName) : nullptr;
 	}
 
 	/** Every special control type: the subclasses of FEpithSpecialControl in all loaded modules, by name. */
@@ -578,6 +601,473 @@ private:
 	bool bDropAfter = false;
 };
 
+/**
+ * An empty slot that accepts a property or an element type dragged from the designer's left pane, highlighted while one it
+ * accepts is held over it. A Spacer is refused outside Vertical and Horizontal Groups (bAllowSpacer), as in the slot's menu.
+ */
+class SEpithPaletteSlotDropTarget : public SCompoundWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SEpithPaletteSlotDropTarget)
+		: _bAllowSpacer(false)
+		{}
+		SLATE_ARGUMENT(bool, bAllowSpacer)
+		SLATE_ARGUMENT(TFunction<void(FName)>, OnDropProperty)
+		SLATE_ARGUMENT(TFunction<void(const UScriptStruct*)>, OnDropElementType)
+		SLATE_DEFAULT_SLOT(FArguments, Content)
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs)
+	{
+		bAllowSpacer = InArgs._bAllowSpacer;
+		OnDropProperty = InArgs._OnDropProperty;
+		OnDropElementType = InArgs._OnDropElementType;
+
+		ChildSlot
+		[
+			InArgs._Content.Widget
+		];
+	}
+
+	virtual void OnDragEnter(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
+	{
+		if (TSharedPtr<FEpithPropertyDragDrop> PropertyOperation = DragDropEvent.GetOperationAs<FEpithPropertyDragDrop>())
+		{
+			bDragOver = true;
+			PropertyOperation->SetToolTip(FText::Format(LOCTEXT("PropertyDrop_Assign", "Show {0} here"), PropertyOperation->Label), FAppStyle::GetBrush("Graph.ConnectorFeedback.OK"));
+		}
+		else if (TSharedPtr<FEpithElementTypeDragDrop> ElementOperation = DragDropEvent.GetOperationAs<FEpithElementTypeDragDrop>())
+		{
+			if (CanTake(ElementOperation->ElementType))
+			{
+				bDragOver = true;
+				ElementOperation->SetToolTip(FText::Format(LOCTEXT("ElementDrop_Assign", "Make this slot a {0}"), ElementOperation->Label), FAppStyle::GetBrush("Graph.ConnectorFeedback.OK"));
+			}
+			else
+			{
+				ElementOperation->SetToolTip(LOCTEXT("ElementDrop_SpacerHere", "A Spacer can only go in a Vertical or Horizontal Group"), FAppStyle::GetBrush("Graph.ConnectorFeedback.Error"));
+			}
+		}
+	}
+
+	virtual void OnDragLeave(const FDragDropEvent& DragDropEvent) override
+	{
+		bDragOver = false;
+
+		if (TSharedPtr<FDecoratedDragDropOp> Operation = GetPaletteOperation(DragDropEvent))
+		{
+			Operation->ResetToDefaultToolTip();
+		}
+	}
+
+	virtual FReply OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
+	{
+		return GetPaletteOperation(DragDropEvent).IsValid() ? FReply::Handled() : FReply::Unhandled();
+	}
+
+	virtual FReply OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
+	{
+		bDragOver = false;
+
+		if (TSharedPtr<FEpithPropertyDragDrop> PropertyOperation = DragDropEvent.GetOperationAs<FEpithPropertyDragDrop>())
+		{
+			if (OnDropProperty)
+			{
+				OnDropProperty(PropertyOperation->PropertyPath);
+			}
+
+			return FReply::Handled();
+		}
+
+		if (TSharedPtr<FEpithElementTypeDragDrop> ElementOperation = DragDropEvent.GetOperationAs<FEpithElementTypeDragDrop>())
+		{
+			// A refused type (a Spacer here) is still handled, so the drop doesn't fall through to anything around this slot
+			if (OnDropElementType && CanTake(ElementOperation->ElementType))
+			{
+				OnDropElementType(ElementOperation->ElementType);
+			}
+
+			return FReply::Handled();
+		}
+
+		return FReply::Unhandled();
+	}
+
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
+	{
+		const int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+
+		// The drag ended somewhere else (or was cancelled) without a drag-leave reaching us
+		if (bDragOver && !FSlateApplication::Get().IsDragDropping())
+		{
+			bDragOver = false;
+		}
+
+		if (!bDragOver)
+		{
+			return MaxLayer;
+		}
+
+		const FLinearColor Color = FSlateColor(EStyleColor::Primary).GetColor(InWidgetStyle);
+		const FSlateBrush* Brush = FAppStyle::GetBrush("WhiteBrush");
+		const FVector2f Size = FVector2f(AllottedGeometry.GetLocalSize());
+
+		FSlateDrawElement::MakeBox(OutDrawElements, MaxLayer + 1, AllottedGeometry.ToPaintGeometry(), Brush, ESlateDrawEffect::None, Color.CopyWithNewOpacity(0.2f));
+
+		auto DrawRect = [&](float X, float Y, float W, float H)
+		{
+			FSlateDrawElement::MakeBox(OutDrawElements, MaxLayer + 1, AllottedGeometry.ToPaintGeometry(FVector2f(W, H), FSlateLayoutTransform(FVector2f(X, Y))), Brush, ESlateDrawEffect::None, Color);
+		};
+
+		DrawRect(0, 0, Size.X, 2);
+		DrawRect(0, Size.Y - 2, Size.X, 2);
+		DrawRect(0, 0, 2, Size.Y);
+		DrawRect(Size.X - 2, 0, 2, Size.Y);
+
+		return MaxLayer + 1;
+	}
+
+private:
+	bool CanTake(const UScriptStruct* ElementType) const
+	{
+		return ElementType && (bAllowSpacer || ElementType != FEpithWindowElement_Spacer::StaticStruct());
+	}
+
+	/** A drag from the left pane (a property or an element type), or null for anything else. */
+	static TSharedPtr<FDecoratedDragDropOp> GetPaletteOperation(const FDragDropEvent& DragDropEvent)
+	{
+		if (TSharedPtr<FEpithPropertyDragDrop> PropertyOperation = DragDropEvent.GetOperationAs<FEpithPropertyDragDrop>())
+		{
+			return PropertyOperation;
+		}
+
+		return DragDropEvent.GetOperationAs<FEpithElementTypeDragDrop>();
+	}
+
+	bool bAllowSpacer = false;
+	TFunction<void(FName)> OnDropProperty;
+	TFunction<void(const UScriptStruct*)> OnDropElementType;
+	mutable bool bDragOver = false;
+};
+
+namespace EpithDesigner
+{
+	/**
+	 * Shows its content turned a quarter turn anticlockwise, so it reads from bottom to top, and takes up the turned size in layout
+	 * (a render transform on its own would leave the space of the unturned content). The same as BangoScripts' SBangoSidewaysBox.
+	 */
+	class SSidewaysBox : public SCompoundWidget
+	{
+	public:
+		SLATE_BEGIN_ARGS(SSidewaysBox) {}
+			SLATE_DEFAULT_SLOT(FArguments, Content)
+		SLATE_END_ARGS()
+
+		void Construct(const FArguments& InArgs)
+		{
+			ChildSlot
+			[
+				InArgs._Content.Widget
+			];
+		}
+
+		virtual FVector2D ComputeDesiredSize(float) const override
+		{
+			const FVector2D ChildSize = FVector2D(ChildSlot.GetWidget()->GetDesiredSize());
+			return FVector2D(ChildSize.Y, ChildSize.X);
+		}
+
+		virtual void OnArrangeChildren(const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren) const override
+		{
+			const TSharedRef<SWidget>& Child = ChildSlot.GetWidget();
+
+			if (!ArrangedChildren.Accepts(Child->GetVisibility()))
+			{
+				return;
+			}
+
+			// The content gets its own (unturned) size, centred on this box, and is turned about its centre
+			const FVector2D ChildSize = FVector2D(Child->GetDesiredSize());
+			const FVector2D Offset = (FVector2D(AllottedGeometry.GetLocalSize()) - ChildSize) * 0.5;
+			const FGeometry ChildGeometry = AllottedGeometry.MakeChild(
+				ChildSize,
+				FSlateLayoutTransform(Offset),
+				FSlateRenderTransform(FQuat2D(FMath::DegreesToRadians(-90.0f))),
+				FVector2D(0.5, 0.5));
+
+			ArrangedChildren.AddWidget(FArrangedWidget(Child, ChildGeometry));
+		}
+	};
+
+	/** Where the Properties pane's open state and width are remembered between sessions. */
+	const TCHAR* PaletteConfigSection = TEXT("Epith.PanelDesigner");
+
+	/**
+	 * One section of the side pane: a header bar with an arrow and a bold title, which opens and closes it, and its body below.
+	 * The same as BangoScripts' SBangoScriptEditor::MakeFoldout. Whether it's open is remembered between sessions under ConfigKey.
+	 */
+	TSharedRef<SWidget> MakeSidePaneFoldout(const FText& Title, TSharedRef<bool> bExpanded, const TCHAR* ConfigKey, TSharedRef<SWidget> Body)
+	{
+		if (GConfig)
+		{
+			GConfig->GetBool(PaletteConfigSection, ConfigKey, *bExpanded, GEditorPerProjectIni);
+		}
+
+		const FString Key = ConfigKey;
+
+		TSharedRef<SHorizontalBox> Header = SNew(SHorizontalBox)
+			+ SHorizontalBox::Slot()
+			.FillWidth(1.0f)
+			[
+				SNew(SButton)
+				.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+				.ContentPadding(FMargin(4.0f, 4.0f))
+				.ToolTipText(LOCTEXT("SidePaneFoldoutTooltip", "Click to show or hide this section."))
+				.OnClicked_Lambda([bExpanded, Key]()
+				{
+					*bExpanded = !*bExpanded;
+
+					if (GConfig)
+					{
+						GConfig->SetBool(PaletteConfigSection, *Key, *bExpanded, GEditorPerProjectIni);
+					}
+
+					return FReply::Handled();
+				})
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+					[
+						SNew(SImage)
+						.Image_Lambda([bExpanded]()
+						{
+							return FAppStyle::GetBrush(*bExpanded ? "TreeArrow_Expanded" : "TreeArrow_Collapsed");
+						})
+						.ColorAndOpacity(FSlateColor::UseForeground())
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.VAlign(VAlign_Center)
+					[
+						SNew(STextBlock)
+						.Text(Title)
+						.Font(FAppStyle::GetFontStyle("BoldFont"))
+					]
+				]
+			];
+
+		return SNew(SVerticalBox)
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("ToolPanel.GroupBorder"))
+				.Padding(0.0f)
+				[
+					Header
+				]
+			]
+			+ SVerticalBox::Slot()
+			.AutoHeight()
+			[
+				SNew(SBox)
+				.Visibility_Lambda([bExpanded]() { return *bExpanded ? EVisibility::Visible : EVisibility::Collapsed; })
+				[
+					Body
+				]
+			];
+	}
+}
+
+TSharedRef<SWidget> SEpithPanelDesigner::MakeLeftPane()
+{
+	// ELEMENTS: every element type, to drag onto an empty slot
+	TSharedRef<SVerticalBox> ElementList = SNew(SVerticalBox);
+
+	for (const UScriptStruct* Type : EpithDesigner::GetElementTypes())
+	{
+		const FText ToolTip = Type->GetToolTipText().IsEmpty()
+			? LOCTEXT("ElementPalette_DragHint", "Drag onto an empty slot.")
+			: FText::Format(LOCTEXT("ElementPalette_ToolTip", "{0}\n\nDrag onto an empty slot."), Type->GetToolTipText());
+
+		ElementList->AddSlot()
+		.AutoHeight()
+		[
+			SNew(SEpithPaletteRow)
+			.Icon(EpithDesigner::GetElementTypeIcon(Type))
+			.Label(Type->GetDisplayNameText())
+			.RowToolTip(ToolTip)
+			.OnBeginDrag([Type]() -> TSharedRef<FDragDropOperation>
+			{
+				return FEpithElementTypeDragDrop::New(Type);
+			})
+		];
+	}
+
+	// The same as the side pane on the right: foldout sections in one scrolling column, on a standalone window's background
+	return SNew(SBorder)
+		.BorderImage(&FCoreStyle::Get().GetWidgetStyle<FWindowStyle>("Window").BackgroundBrush)
+		.Padding(0.0f)
+		// Clicks on the pane's empty space stay here (the designer clears the selection on clicks that reach it)
+		.OnMouseButtonDown_Lambda([](const FGeometry&, const FPointerEvent&) { return FReply::Handled(); })
+		[
+			SNew(SScrollBox)
+			+ SScrollBox::Slot()
+			[
+				SNew(SVerticalBox)
+
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 2.0f)
+				[
+					EpithDesigner::MakeSidePaneFoldout(LOCTEXT("ElementsHeading", "ELEMENTS"), bElementsSectionExpanded, TEXT("ElementsSectionExpanded"),
+						SNew(SBox)
+						.Padding(0.0f, 2.0f, 0.0f, 4.0f)
+						[
+							ElementList
+						])
+				]
+
+				// PROPERTIES: every property of the target class, to drag onto an empty slot
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 2.0f)
+				[
+					EpithDesigner::MakeSidePaneFoldout(LOCTEXT("PropertiesHeading", "PROPERTIES"), bPropertiesSectionExpanded, TEXT("PropertiesSectionExpanded"),
+						SNew(SBox)
+						.Padding(0.0f, 0.0f, 0.0f, 4.0f)
+						[
+							SAssignNew(Palette, SEpithPropertyPalette)
+						])
+				]
+			]
+		];
+}
+
+TSharedRef<SWidget> SEpithPanelDesigner::MakeSidePane()
+{
+	// Foldout sections one after another in a single scrolling pane; a closed foldout is just its header. Its background is a
+	// standalone window's, as in BangoScripts' script editor.
+	return SNew(SBorder)
+		.BorderImage(&FCoreStyle::Get().GetWidgetStyle<FWindowStyle>("Window").BackgroundBrush)
+		.Padding(0.0f)
+		// Clicks on the pane's empty space stay here (the designer clears the selection on clicks that reach it)
+		.OnMouseButtonDown_Lambda([](const FGeometry&, const FPointerEvent&) { return FReply::Handled(); })
+		[
+			SNew(SScrollBox)
+			+ SScrollBox::Slot()
+			[
+				SNew(SVerticalBox)
+
+				// ELEMENT: the settings of whatever is selected in the preview (its slot's, then its own)
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 2.0f)
+				[
+					EpithDesigner::MakeSidePaneFoldout(LOCTEXT("ElementHeading", "ELEMENT"), bElementSectionExpanded, TEXT("ElementSectionExpanded"),
+						ElementDetails.IsValid() ? StaticCastSharedRef<SWidget>(ElementDetails.ToSharedRef()) : SNullWidget::NullWidget)
+				]
+			]
+		];
+}
+
+TSharedRef<SWidget> SEpithPanelDesigner::MakePaletteTab()
+{
+	// A folder tab standing out from the preview's left edge: square on the left (against the edge or the pane), rounded on the right
+	static const FSlateRoundedBoxBrush TabBrush(FLinearColor::White, FVector4(0.0f, 6.0f, 6.0f, 0.0f), FSlateColor(FStyleColors::InputOutline), 1.0f);
+
+	return SAssignNew(PaletteTabButton, SButton)
+		.ButtonStyle(FAppStyle::Get(), "NoBorder")
+		.ContentPadding(FMargin(0.0f))
+		.ToolTipText_Lambda([this]()
+		{
+			return bPaletteOpen
+				? LOCTEXT("HidePaletteTooltip", "Put the Properties pane away.")
+				: LOCTEXT("ShowPaletteTooltip", "Pull out the Properties pane: every property of the target class, to drag onto empty slots.");
+		})
+		.OnClicked_Lambda([this]()
+		{
+			SetPaletteOpen(!bPaletteOpen, true);
+			return FReply::Handled();
+		})
+		[
+			SNew(SBorder)
+			.BorderImage(&TabBrush)
+			.Padding(FMargin(4.0f, 12.0f, 5.0f, 12.0f))
+			.BorderBackgroundColor_Lambda([this]() -> FSlateColor
+			{
+				if (bPaletteOpen)
+				{
+					return FSlateColor(FStyleColors::Primary); // pulled out
+				}
+
+				return PaletteTabButton.IsValid() && PaletteTabButton->IsHovered() ? FSlateColor(FStyleColors::Hover) : FSlateColor(FStyleColors::Dropdown);
+			})
+			[
+				// Written along the tab, turned to read from bottom to top
+				SNew(EpithDesigner::SSidewaysBox)
+				[
+					SNew(STextBlock)
+					.Text(LOCTEXT("PaletteTab", "Properties Palette"))
+					.Font(FAppStyle::GetFontStyle("BoldFont"))
+					.ColorAndOpacity_Lambda([this]() -> FSlateColor
+					{
+						return bPaletteOpen || (PaletteTabButton.IsValid() && PaletteTabButton->IsHovered()) ? FSlateColor::UseForeground() : FSlateColor::UseSubduedForeground();
+					})
+				]
+			]
+		];
+}
+
+void SEpithPanelDesigner::SetPaletteOpen(bool bOpen, bool bAnimate)
+{
+	bPaletteOpen = bOpen;
+
+	if (GConfig)
+	{
+		GConfig->SetBool(EpithDesigner::PaletteConfigSection, TEXT("PropertiesPaneOpen"), bPaletteOpen, GEditorPerProjectIni);
+	}
+
+	// Up to date before it slides into view (an instance may have been placed in the level since, which makes the list exact)
+	if (bOpen && Palette.IsValid())
+	{
+		UEpithPanelDefinition* PanelDefinition = Definition.Get();
+		Palette->Refresh(PanelDefinition ? PanelDefinition->GetTargetClass() : nullptr, true);
+	}
+
+	if (!bAnimate)
+	{
+		PaletteOpenness = bOpen ? 1.0f : 0.0f;
+		return;
+	}
+
+	if (!bPaletteSliding)
+	{
+		bPaletteSliding = true;
+		RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SEpithPanelDesigner::AnimatePalette));
+	}
+}
+
+EActiveTimerReturnType SEpithPanelDesigner::AnimatePalette(double InCurrentTime, float InDeltaTime)
+{
+	static constexpr float SlideSeconds = 0.18f;
+
+	const float Target = bPaletteOpen ? 1.0f : 0.0f;
+	PaletteOpenness = FMath::FInterpConstantTo(PaletteOpenness, Target, InDeltaTime, 1.0f / SlideSeconds);
+
+	if (FMath::IsNearlyEqual(PaletteOpenness, Target))
+	{
+		PaletteOpenness = Target;
+		bPaletteSliding = false;
+		return EActiveTimerReturnType::Stop;
+	}
+
+	return EActiveTimerReturnType::Continue;
+}
+
 void SEpithPanelDesigner::Construct(const FArguments& InArgs, UEpithPanelDefinition* InDefinition)
 {
 	Definition = InDefinition;
@@ -609,14 +1099,102 @@ void SEpithPanelDesigner::Construct(const FArguments& InArgs, UEpithPanelDefinit
 		+ SVerticalBox::Slot()
 		.FillHeight(1.0f)
 		[
-			SNew(SScrollBox)
-			+ SScrollBox::Slot()
-			.Padding(16)
+			SNew(SSplitter)
+			.Orientation(Orient_Horizontal)
+
+			// The Properties pane. While it's hidden, the preview has the whole width. Opening and closing slide it (its width grows
+			// from nothing, PaletteOpenness). It keeps its width when the window is resized; the splitter sets its open width.
+			+ SSplitter::Slot()
+			.SizeRule(SSplitter::SizeToContent)
+			.Resizable(true) // a sized-to-content slot is only dragged if it says so (and has OnSlotResized)
+			.OnSlotResized_Lambda([this](float NewWidth)
+			{
+				if (PaletteOpenness >= 1.0f)
+				{
+					PaletteWidth = FMath::Max(NewWidth, MinPaletteWidth);
+
+					if (GConfig)
+					{
+						GConfig->SetFloat(EpithDesigner::PaletteConfigSection, TEXT("PropertiesPaneWidth"), PaletteWidth, GEditorPerProjectIni);
+					}
+				}
+			})
 			[
-				SAssignNew(PreviewArea, SBox)
+				SNew(SBox)
+				.WidthOverride_Lambda([this]() { return PaletteWidth * FMath::InterpEaseInOut(0.0f, 1.0f, PaletteOpenness, 2.0f); })
+				.Clipping(EWidgetClipping::ClipToBounds)
+				.Visibility_Lambda([this]() { return PaletteOpenness > 0.0f ? EVisibility::Visible : EVisibility::Collapsed; })
+				[
+					MakeLeftPane()
+				]
+			]
+
+			// The preview: the only part whose width follows the window's
+			+ SSplitter::Slot()
+			.Value(1.0f)
+			[
+				SNew(SOverlay)
+				+ SOverlay::Slot()
+				[
+					SNew(SScrollBox)
+					+ SScrollBox::Slot()
+					// Extra room on the left for the Properties tab, so it never covers the panel
+					.Padding(FMargin(40, 16, 16, 16))
+					[
+						SAssignNew(PreviewArea, SBox)
+					]
+				]
+
+				// The Properties tab, floating on the preview's left edge: on the pane's right side when it's open, so opening the
+				// pane pulls the tab out with it
+				+ SOverlay::Slot()
+				.HAlign(HAlign_Left)
+				.VAlign(VAlign_Top)
+				.Padding(0.0f, 16.0f, 0.0f, 0.0f)
+				[
+					MakePaletteTab()
+				]
+			]
+
+			// The side pane on the right (ELEMENT, and more to come). Sized to its content, a width it keeps when the window is
+			// resized; dragging the splitter changes it (SidePaneWidth).
+			+ SSplitter::Slot()
+			.SizeRule(SSplitter::SizeToContent)
+			.Resizable(true) // a sized-to-content slot is only dragged if it says so (and has OnSlotResized)
+			.MinSize(MinPaletteWidth)
+			.OnSlotResized_Lambda([this](float NewWidth)
+			{
+				SidePaneWidth = FMath::Max(NewWidth, MinPaletteWidth);
+
+				if (GConfig)
+				{
+					GConfig->SetFloat(EpithDesigner::PaletteConfigSection, TEXT("SidePaneWidth"), SidePaneWidth, GEditorPerProjectIni);
+				}
+			})
+			[
+				SNew(SBox)
+				.WidthOverride_Lambda([this]() { return SidePaneWidth; })
+				[
+					MakeSidePane()
+				]
 			]
 		]
 	];
+
+	// Open or closed, and how wide, as last time
+	if (GConfig)
+	{
+		GConfig->GetFloat(EpithDesigner::PaletteConfigSection, TEXT("PropertiesPaneWidth"), PaletteWidth, GEditorPerProjectIni);
+		PaletteWidth = FMath::Max(PaletteWidth, MinPaletteWidth);
+
+		GConfig->GetFloat(EpithDesigner::PaletteConfigSection, TEXT("SidePaneWidth"), SidePaneWidth, GEditorPerProjectIni);
+		SidePaneWidth = FMath::Max(SidePaneWidth, MinPaletteWidth);
+
+		bool bWasOpen = false;
+		GConfig->GetBool(EpithDesigner::PaletteConfigSection, TEXT("PropertiesPaneOpen"), bWasOpen, GEditorPerProjectIni);
+		bPaletteOpen = bWasOpen;
+		PaletteOpenness = bWasOpen ? 1.0f : 0.0f;
+	}
 
 	FCoreUObjectDelegates::OnObjectPropertyChanged.AddSP(this, &SEpithPanelDesigner::OnObjectPropertyChanged);
 
@@ -673,6 +1251,13 @@ void SEpithPanelDesigner::Redraw()
 
 	UClass* TargetClass = PanelDefinition->GetTargetClass();
 
+	// The Properties pane: relisted when the Target Class changes; green for paths now used in the panel
+	if (Palette.IsValid())
+	{
+		Palette->Refresh(TargetClass);
+		Palette->SetUsedPaths(EpithPropertyMenu::GatherUsedPaths(PanelDefinition));
+	}
+
 	if (!TargetClass)
 	{
 		PreviewArea->SetContent(
@@ -699,6 +1284,12 @@ void SEpithPanelDesigner::Redraw()
 		SNew(SBox)
 		.HAlign(HAlign_Left)
 		[
+			// A thin black outline around the whole panel, so its edges show against the editor background
+			SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+			.BorderBackgroundColor(FLinearColor::Black)
+			.Padding(1)
+			[
 			// Same background as a section of the real panel
 			SNew(SBorder)
 			.BorderImage(FAppStyle::GetBrush("Brushes.Panel"))
@@ -723,6 +1314,7 @@ void SEpithPanelDesigner::Redraw()
 					]
 				]
 			]
+			]
 		]);
 
 	// Line up property columns on the first frame (no one-frame flicker)
@@ -740,7 +1332,7 @@ void SEpithPanelDesigner::Edit(const FText& Description, TFunction<void()> Mutat
 		return;
 	}
 
-	// The mutation may move slot data around; the Element tab must not look at it until the redraw
+	// The mutation may move slot data around; the ELEMENT section must not look at it until the redraw
 	SuspendElementDetails();
 
 	{
@@ -757,10 +1349,10 @@ void SEpithPanelDesigner::Edit(const FText& Description, TFunction<void()> Mutat
 
 void SEpithPanelDesigner::OnObjectPropertyChanged(UObject* Object, FPropertyChangedEvent& PropertyChangedEvent)
 {
-	// Covers the Target Class picker, the Details tab, the Element tab and our own edits
+	// Covers the Target Class picker, the Details tab, the ELEMENT section and our own edits
 	if (Object && Object == Definition.Get())
 	{
-		// A change from elsewhere may have moved slot data; changes made in the Element tab itself don't move anything
+		// A change from elsewhere may have moved slot data; changes made in the ELEMENT section itself don't move anything
 		if (!ElementDetails.IsValid() || !ElementDetails->IsApplyingChange())
 		{
 			SuspendElementDetails();
@@ -858,7 +1450,34 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 			Row
 		];
 
-	return WithDragHandle(Frame, Actions, LOCTEXT("DragLabel_Empty", "Empty Slot"));
+	// A property or element type dragged from the left pane fills this slot: a Property element showing that property, or a
+	// new element of that type (as if picked from the menu above)
+	TSharedRef<SWidget> DropTarget = SNew(SEpithPaletteSlotDropTarget)
+		.bAllowSpacer(Actions.Reorder != EEpithSlotReorder::None)
+		.OnDropElementType([this, SlotPtr](const UScriptStruct* Type)
+		{
+			Edit(FText::Format(LOCTEXT("AddElement", "Add {0}"), Type->GetDisplayNameText()), [SlotPtr, Type]()
+			{
+				EpithDesigner::InitializeElement(*SlotPtr, Type);
+			});
+		})
+		.OnDropProperty([this, SlotPtr](FName Path)
+		{
+			Edit(LOCTEXT("DropPropertyTransaction", "Set Property"), [SlotPtr, Path]()
+			{
+				EpithDesigner::InitializeElement(*SlotPtr, FEpithWindowElement_Property::StaticStruct());
+
+				if (FEpithWindowElement_Property* PropertyElement = SlotPtr->GetMutablePtr<FEpithWindowElement_Property>())
+				{
+					PropertyElement->PropertySelector.SetPropertyPath(Path);
+				}
+			});
+		})
+		[
+			Frame
+		];
+
+	return WithDragHandle(DropTarget, Actions, LOCTEXT("DragLabel_Empty", "Empty Slot"));
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWindowElement>& Slot, TSharedRef<SWidget> ElementWidget, const FEpithSlotActions& Actions)
@@ -871,7 +1490,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWind
 
 	NoteDrawnSlot(Slot, Actions);
 
-	// Left-click selects (settings in the Element tab), right-click opens the menu. The outline shows while hovered or selected.
+	// Left-click selects (settings in the ELEMENT section), right-click opens the menu. The outline shows while hovered or selected.
 	TSharedRef<SWidget> Frame = SNew(SEpithDesignerFrame)
 		.bOnlyWhenHovered(true)
 		.bOutlineContent(true)

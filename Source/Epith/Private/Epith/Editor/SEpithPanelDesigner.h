@@ -5,6 +5,8 @@
 #include "Widgets/SCompoundWidget.h"
 
 class SBox;
+class SButton;
+class SEpithPropertyPalette;
 class SEpithElementDetails;
 class UEpithPanelDefinition;
 struct FEpithPropertyDataContainer;
@@ -17,6 +19,9 @@ struct FEpithPropertyDataContainer;
  *   empty slots are dashed boxes with an element picker, elements have a hover outline and a menu, and groups get "+ Add".
  * - Property rows preview the class defaults and can't be edited here.
  * - Every change is an undoable transaction on the panel definition; the preview redraws after each one.
+ * - A pane pulls out from the left (its tab is on the preview's left edge), with ELEMENTS and PROPERTIES: drag an element type
+ *   or a property from it onto an empty slot.
+ * - A side pane on the right holds foldout sections; ELEMENT shows the selected element's settings (SEpithElementDetails).
  */
 class SEpithPanelDesigner : public SCompoundWidget, public IEpithDesigner, public FEditorUndoClient
 {
@@ -26,7 +31,7 @@ public:
 		/** Called after the designer changed the definition, e.g. so the Details tab can refresh. */
 		SLATE_EVENT(FSimpleDelegate, OnDefinitionEdited)
 
-		/** Where the selected element's settings are shown (the panel editor's Element tab). */
+		/** The selected element's settings, shown in the side pane's ELEMENT section. */
 		SLATE_ARGUMENT(TSharedPtr<SEpithElementDetails>, ElementDetails)
 
 	SLATE_END_ARGS()
@@ -73,7 +78,7 @@ protected:
 	/** Menu for an empty slot: pick an element type. Spacers are only offered in Vertical and Horizontal Group slots. */
 	TSharedRef<SWidget> MakeElementTypeMenu(TInstancedStruct<FEpithWindowElement>* Slot, bool bAllowSpacer);
 
-	/** Selects a slot (or nothing) and shows it in the Element tab. */
+	/** Selects a slot (or nothing) and shows it in the ELEMENT section. */
 	void Select(TInstancedStruct<FEpithWindowElement>* Slot);
 
 	/** After a redraw: keeps the selection if its slot is still in the panel, otherwise clears it. */
@@ -82,8 +87,22 @@ protected:
 	/** Remembers a slot drawn in this redraw, with its group slot data, so it can be selected. */
 	void NoteDrawnSlot(TInstancedStruct<FEpithWindowElement>& Slot, const FEpithSlotActions& Actions);
 
-	/** Stops the Element tab from showing data that's about to move (layout edits, undo). */
+	/** Stops the ELEMENT section from showing data that's about to move (layout edits, undo). */
 	void SuspendElementDetails();
+
+	/** The Properties tab: a folder tab on the preview's left edge that pulls the Properties pane out, or pushes it back. */
+	TSharedRef<SWidget> MakePaletteTab();
+
+	/** Opens or closes the Properties pane, sliding it (bAnimate) or at once. Remembered between sessions. */
+	void SetPaletteOpen(bool bOpen, bool bAnimate);
+
+	EActiveTimerReturnType AnimatePalette(double InCurrentTime, float InDeltaTime);
+
+	/** The pane on the left (pulled out by its tab): ELEMENTS and PROPERTIES foldouts, whose rows are dragged onto empty slots. */
+	TSharedRef<SWidget> MakeLeftPane();
+
+	/** The side pane on the right: a scrolling column of foldout sections (ELEMENT, for now). */
+	TSharedRef<SWidget> MakeSidePane();
 
 	TWeakObjectPtr<UEpithPanelDefinition> Definition;
 
@@ -103,6 +122,32 @@ protected:
 	TWeakPtr<SWidget> PendingAddButton;
 
 	TSharedPtr<SEpithElementDetails> ElementDetails;
+
+	/** The Properties pane on the left: hidden to start with (unless it was open last time), slid out by its tab. */
+	TSharedPtr<SEpithPropertyPalette> Palette;
+	TSharedPtr<SButton> PaletteTabButton;
+	bool bPaletteOpen = false;
+
+	/** How far the pane is slid out, 0 (hidden) to 1 (open): it moves toward bPaletteOpen when the tab is clicked. */
+	float PaletteOpenness = 0.0f;
+
+	/** True while the pane is sliding (AnimatePalette is running). */
+	bool bPaletteSliding = false;
+
+	/** The pane's width in pixels when it's open (the splitter beside it sets this; resizing the window doesn't). */
+	float PaletteWidth = 260.0f;
+
+	static constexpr float MinPaletteWidth = 120.0f;
+
+	/** The side pane's width in pixels (the splitter beside it sets this; resizing the window doesn't). Remembered between sessions. */
+	float SidePaneWidth = 320.0f;
+
+	/** Whether the left pane's ELEMENTS and PROPERTIES sections are open. Remembered between sessions. */
+	TSharedRef<bool> bElementsSectionExpanded = MakeShared<bool>(true);
+	TSharedRef<bool> bPropertiesSectionExpanded = MakeShared<bool>(true);
+
+	/** Whether the side pane's ELEMENT section is open. Remembered between sessions. */
+	TSharedRef<bool> bElementSectionExpanded = MakeShared<bool>(true);
 
 	/** Which tabs and foldouts are showing in the preview, restored after every redraw while the editor is open. */
 	TSharedRef<FEpithViewState> ViewState = MakeShared<FEpithViewState>();

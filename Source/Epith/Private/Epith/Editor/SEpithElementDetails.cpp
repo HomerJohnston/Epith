@@ -50,26 +50,31 @@ void SEpithElementDetails::Construct(const FArguments& InArgs, UEpithPanelDefini
 	SlotView = MakeStructView();
 	ElementView = MakeStructView();
 
+	// No scroll box of its own: it sits in the designer's side pane, which scrolls
 	ChildSlot
 	[
-		SNew(SScrollBox)
-		+ SScrollBox::Slot()
+		SNew(SVerticalBox)
+		+ SVerticalBox::Slot()
+		.AutoHeight()
 		.Padding(8, 8, 8, 4)
 		[
 			SAssignNew(SlotHeading, STextBlock)
 			.Font(FAppStyle::GetFontStyle("BoldFont"))
 		]
-		+ SScrollBox::Slot()
+		+ SVerticalBox::Slot()
+		.AutoHeight()
 		[
 			SlotView->GetWidget().ToSharedRef()
 		]
-		+ SScrollBox::Slot()
+		+ SVerticalBox::Slot()
+		.AutoHeight()
 		.Padding(8, 12, 8, 4)
 		[
 			SAssignNew(ElementHeading, STextBlock)
 			.Font(FAppStyle::GetFontStyle("BoldFont"))
 		]
-		+ SScrollBox::Slot()
+		+ SVerticalBox::Slot()
+		.AutoHeight()
 		[
 			ElementView->GetWidget().ToSharedRef()
 		]
