@@ -143,7 +143,10 @@ namespace EpithDesigner
 		return Style;
 	}
 
-	/** Turns a slot into a new element of Type. Groups start with no slots; their "+ to ..." button adds them. */
+	/**
+	 * Turns a slot into a new element of Type. Groups start with one empty slot, ready to fill in (a Tabbed Group's is named
+	 * "Tab 1"); a Foldout already has its one.
+	 */
 	void InitializeElement(TInstancedStruct<FEpithWindowElement>& Slot, const UScriptStruct* Type)
 	{
 		Slot.InitializeAsScriptStruct(Type);
@@ -151,6 +154,18 @@ namespace EpithDesigner
 		if (FEpithWindowElement_Foldout* FoldoutElement = Slot.GetMutablePtr<FEpithWindowElement_Foldout>())
 		{
 			FoldoutElement->FoldoutTitle = TEXT("Foldout");
+		}
+		else if (FEpithWindowElement_VerticalGroup* Vertical = Slot.GetMutablePtr<FEpithWindowElement_VerticalGroup>())
+		{
+			Vertical->Slots.AddDefaulted();
+		}
+		else if (FEpithWindowElement_HorizontalGroup* Horizontal = Slot.GetMutablePtr<FEpithWindowElement_HorizontalGroup>())
+		{
+			Horizontal->Slots.AddDefaulted();
+		}
+		else if (FEpithWindowElement_TabbedGroup* Tabbed = Slot.GetMutablePtr<FEpithWindowElement_TabbedGroup>())
+		{
+			Tabbed->Slots.AddDefaulted_GetRef().TabName = TEXT("Tab 1");
 		}
 	}
 
