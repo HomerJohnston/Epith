@@ -34,6 +34,16 @@ class SEpithViewportMasterPane : public SCompoundWidget
 
 	void Construct(const FArguments& InArgs);
 
+	/**
+	 * The whole panel is solid to the mouse: anything its own controls don't use stops here instead of falling through to the
+	 * level viewport behind it (which would select or deselect actors, fly the camera, and so on). Controls inside the panel
+	 * still get every event first.
+	 */
+	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual FReply OnMouseButtonDoubleClick(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+	virtual FReply OnMouseWheel(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override;
+
 	~SEpithViewportMasterPane();
 
 	/** False if no panel definition matched the target or any of its subobjects. */

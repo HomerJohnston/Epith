@@ -92,6 +92,26 @@ SEpithViewportMasterPane::~SEpithViewportMasterPane()
 	});
 }
 
+FReply SEpithViewportMasterPane::OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	return FReply::Handled();
+}
+
+FReply SEpithViewportMasterPane::OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	return FReply::Handled();
+}
+
+FReply SEpithViewportMasterPane::OnMouseButtonDoubleClick(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	return FReply::Handled();
+}
+
+FReply SEpithViewportMasterPane::OnMouseWheel(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent)
+{
+	return FReply::Handled();
+}
+
 FText SEpithViewportMasterPane::GetTitle() const
 {
 	const UObject* PinnedTarget = Target.Get();
