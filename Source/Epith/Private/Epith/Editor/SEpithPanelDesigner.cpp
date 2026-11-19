@@ -837,7 +837,7 @@ namespace EpithDesigner
 	 * One section of the side pane: a header bar with an arrow and a bold title, which opens and closes it, and its body below.
 	 * The same as BangoScripts' SBangoScriptEditor::MakeFoldout. Whether it's open is remembered between sessions under ConfigKey.
 	 */
-	TSharedRef<SWidget> MakeSidePaneFoldout(const FText& Title, TSharedRef<bool> bExpanded, const TCHAR* ConfigKey, TSharedRef<SWidget> Body)
+	TSharedRef<SWidget> MakeSidePaneFoldout(const FText& Title, TSharedRef<bool> bExpanded, const TCHAR* ConfigKey, TSharedRef<SWidget> Body, TSharedPtr<SWidget> HeaderExtra = nullptr)
 	{
 		if (GConfig)
 		{
@@ -889,6 +889,18 @@ namespace EpithDesigner
 					]
 				]
 			];
+
+		// Something on the header's right, beside the title (e.g. a refresh button)
+		if (HeaderExtra.IsValid())
+		{
+			Header->AddSlot()
+			.AutoWidth()
+			.VAlign(VAlign_Center)
+			.Padding(0.0f, 0.0f, 4.0f, 0.0f)
+			[
+				HeaderExtra.ToSharedRef()
+			];
+		}
 
 		return SNew(SVerticalBox)
 			+ SVerticalBox::Slot()
@@ -972,6 +984,22 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeLeftPane()
 						.Padding(0.0f, 0.0f, 0.0f, 4.0f)
 						[
 							SAssignNew(Palette, SEpithPropertyPalette)
+						],
+						// Relists by hand (Blueprint compiles relist it on their own)
+						SNew(SButton)
+						.ButtonStyle(FAppStyle::Get(), "SimpleButton")
+						.ContentPadding(FMargin(2.0f))
+						.ToolTipText(LOCTEXT("RefreshPropertiesTooltip", "Relist the target class's properties: after changing the class, or placing one in the level (which makes the list exact)."))
+						.OnClicked_Lambda([this]()
+						{
+							RefreshPalette();
+							return FReply::Handled();
+						})
+						[
+							SNew(SImage)
+							.Image(FAppStyle::GetBrush("Icons.Refresh"))
+							.DesiredSizeOverride(FVector2D(16.0f, 16.0f))
+							.ColorAndOpacity(FSlateColor::UseForeground())
 						])
 				]
 			]
@@ -1438,6 +1466,9 @@ void SEpithPanelDesigner::Construct(const FArguments& InArgs, UEpithPanelDefinit
 	if (GEditor)
 	{
 		GEditor->RegisterForUndo(this);
+
+		// A compiled Blueprint may have gained, lost or renamed properties, and its class defaults are replaced
+		GEditor->OnBlueprintCompiled().AddSP(this, &SEpithPanelDesigner::OnBlueprintCompiled);
 	}
 
 	Redraw();
@@ -1446,6 +1477,11 @@ void SEpithPanelDesigner::Construct(const FArguments& InArgs, UEpithPanelDefinit
 SEpithPanelDesigner::~SEpithPanelDesigner()
 {
 	FCoreUObjectDelegates::OnObjectPropertyChanged.RemoveAll(this);
+
+	if (GEditor)
+	{
+		GEditor->OnBlueprintCompiled().RemoveAll(this);
+	}
 
 	// FEditorUndoClient unregisters itself
 }
@@ -1496,7 +1532,12 @@ void SEpithPanelDesigner::Redraw()
 	// The Properties pane: relisted when the Target Class changes; green for paths now used in the panel
 	if (Palette.IsValid())
 	{
-		Palette->Refresh(TargetClass);
+		// After a Blueprint compile, relisted even if the class is the same (its properties may not be); only while the pane is
+		// out, since opening it relists anyway
+		const bool bForceRelist = bPaletteRelistPending && bPaletteOpen;
+		bPaletteRelistPending = false;
+
+		Palette->Refresh(TargetClass, bForceRelist);
 		Palette->SetUsedPaths(EpithPropertyMenu::GatherUsedPaths(PanelDefinition));
 	}
 
@@ -1609,6 +1650,23 @@ void SEpithPanelDesigner::OnObjectPropertyChanged(UObject* Object, FPropertyChan
 		}
 
 		RequestRedraw();
+	}
+}
+
+void SEpithPanelDesigner::OnBlueprintCompiled()
+{
+	// The event doesn't say which Blueprint, and several can compile in a row: redraw once afterwards, relisting the properties.
+	// The preview redraws too, since it shows the (replaced) class defaults.
+	bPaletteRelistPending = true;
+	RequestRedraw();
+}
+
+void SEpithPanelDesigner::RefreshPalette()
+{
+	if (Palette.IsValid())
+	{
+		UEpithPanelDefinition* PanelDefinition = Definition.Get();
+		Palette->Refresh(PanelDefinition ? PanelDefinition->GetTargetClass() : nullptr, true);
 	}
 }
 

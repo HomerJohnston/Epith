@@ -61,6 +61,12 @@ public:
 	TSharedRef<SWidget> MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked) override;
 	TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, TFunction<void()> InsertSlot) override;
 
+	/** Any Blueprint finished compiling: redraw, relisting the Properties pane's list. */
+	void OnBlueprintCompiled();
+
+	/** Relists the Properties pane now (its refresh button). */
+	void RefreshPalette();
+
 	// FEditorUndoClient
 	void PostUndo(bool bSuccess) override;
 	void PostRedo(bool bSuccess) override;
@@ -170,6 +176,9 @@ protected:
 
 	/** True while the pane is sliding (AnimatePalette is running). */
 	bool bPaletteSliding = false;
+
+	/** A Blueprint compiled since the list was made: relist it at the next redraw while the pane is out. */
+	bool bPaletteRelistPending = false;
 
 	/** The pane's width in pixels when it's open (the splitter beside it sets this; resizing the window doesn't). */
 	float PaletteWidth = 260.0f;
