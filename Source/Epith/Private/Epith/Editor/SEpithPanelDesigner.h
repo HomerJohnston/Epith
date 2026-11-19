@@ -30,7 +30,8 @@ struct FEpithPropertyDataContainer;
  * - Every change is an undoable transaction on the panel definition; the preview redraws after each one.
  * - A pane pulls out from the left (its tab is on the preview's left edge), with ELEMENTS and PROPERTIES: drag an element type
  *   or a property from it onto an empty slot.
- * - A side pane on the right holds foldout sections; ELEMENT shows the selected element's settings (SEpithElementDetails).
+ * - A side pane on the right holds foldout sections: PANEL PROPERTIES (the definition's settings, minus Root) and ELEMENT
+ *   (the selected element's settings, SEpithElementDetails).
  */
 class SEpithPanelDesigner : public SCompoundWidget, public IEpithDesigner, public FEditorUndoClient
 {
@@ -39,6 +40,9 @@ public:
 
 		/** Called after the designer changed the definition, e.g. so the Details tab can refresh. */
 		SLATE_EVENT(FSimpleDelegate, OnDefinitionEdited)
+
+		/** The panel definition's own settings (everything but Root), shown in the side pane's PANEL PROPERTIES section. */
+		SLATE_ARGUMENT(TSharedPtr<SWidget>, PanelDetails)
 
 		/** The selected element's settings, shown in the side pane's ELEMENT section. */
 		SLATE_ARGUMENT(TSharedPtr<SEpithElementDetails>, ElementDetails)
@@ -152,6 +156,9 @@ protected:
 
 	TSharedPtr<SEpithElementDetails> ElementDetails;
 
+	/** The definition's settings, for the PANEL PROPERTIES section. */
+	TSharedPtr<SWidget> PanelDetails;
+
 	/** The Properties pane on the left: hidden to start with (unless it was open last time), slid out by its tab. */
 	TSharedPtr<SEpithPropertyPalette> Palette;
 
@@ -191,6 +198,9 @@ protected:
 	/** Whether the left pane's ELEMENTS and PROPERTIES sections are open. Remembered between sessions. */
 	TSharedRef<bool> bElementsSectionExpanded = MakeShared<bool>(true);
 	TSharedRef<bool> bPropertiesSectionExpanded = MakeShared<bool>(true);
+
+	/** Whether the side pane's PANEL PROPERTIES section is open. Remembered between sessions. */
+	TSharedRef<bool> bPanelPropertiesSectionExpanded = MakeShared<bool>(true);
 
 	/** Whether the side pane's ELEMENT section is open. Remembered between sessions. */
 	TSharedRef<bool> bElementSectionExpanded = MakeShared<bool>(true);

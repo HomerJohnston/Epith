@@ -8,7 +8,8 @@ class SEpithPanelDesigner;
 class UEpithPanelDefinition;
 
 /**
- * The asset editor for Epith panel definitions: the usual Details view, with the panel designer beside it.
+ * The asset editor for Epith panel definitions: the panel designer, whose side panes hold the definition's settings (PANEL
+ * PROPERTIES) and the selected element's (ELEMENT).
  * Opened by UAssetDefinition_EpithPanelDefinition::OpenAssets.
  */
 class FEpithPanelDefinitionEditor : public FAssetEditorToolkit
@@ -25,11 +26,11 @@ public:
 	void UnregisterTabSpawners(const TSharedRef<FTabManager>& InTabManager) override;
 
 private:
-	TSharedRef<SDockTab> SpawnDetailsTab(const FSpawnTabArgs& Args);
 	TSharedRef<SDockTab> SpawnDesignerTab(const FSpawnTabArgs& Args);
 
 	TWeakObjectPtr<UEpithPanelDefinition> Definition;
 
+	/** The definition's settings, minus Root: the designer's PANEL PROPERTIES section. */
 	TSharedPtr<IDetailsView> DetailsView;
 
 	TSharedPtr<SEpithPanelDesigner> Designer;
@@ -37,6 +38,5 @@ private:
 	/** Settings of the element selected in the designer, shown in the designer's side pane. */
 	TSharedPtr<SEpithElementDetails> ElementDetails;
 
-	static const FName DetailsTabId;
 	static const FName DesignerTabId;
 };

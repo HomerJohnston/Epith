@@ -11,7 +11,6 @@
 
 #define LOCTEXT_NAMESPACE "EpithPanelDefinitionEditor"
 
-const FName FEpithPanelDefinitionEditor::DetailsTabId(TEXT("EpithPanelDefinitionEditor_Details"));
 const FName FEpithPanelDefinitionEditor::DesignerTabId(TEXT("EpithPanelDefinitionEditor_Designer"));
 
 void FEpithPanelDefinitionEditor::Init(const EToolkitMode::Type Mode, const TSharedPtr<IToolkitHost>& InitToolkitHost, UEpithPanelDefinition* InDefinition)
@@ -20,31 +19,44 @@ void FEpithPanelDefinitionEditor::Init(const EToolkitMode::Type Mode, const TSha
 
 	FPropertyEditorModule& PropertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 
+	// The definition's own settings (Target Class, Title and so on), shown in the designer's PANEL PROPERTIES section. Everything
+	// except Root: the layout under it is edited in the designer itself.
 	FDetailsViewArgs DetailsViewArgs;
+	DetailsViewArgs.bAllowSearch = false;
 	DetailsViewArgs.bHideSelectionTip = true;
 	DetailsViewArgs.NameAreaSettings = FDetailsViewArgs::HideNameArea;
 
 	DetailsView = PropertyEditor.CreateDetailView(DetailsViewArgs);
-	DetailsView->SetObject(InDefinition);
+	DetailsView->SetIsPropertyVisibleDelegate(FIsPropertyVisible::CreateLambda([](const FPropertyAndParent& PropertyAndParent)
+	{
+		static const FName RootName(TEXT("Root"));
 
-	TWeakPtr<IDetailsView> WeakDetailsView = DetailsView;
+		if (PropertyAndParent.Property.GetFName() == RootName && PropertyAndParent.Property.GetOwnerClass() == UEpithPanelDefinition::StaticClass())
+		{
+			return false;
+		}
+
+		for (const FProperty* Parent : PropertyAndParent.ParentProperties)
+		{
+			if (Parent && Parent->GetFName() == RootName && Parent->GetOwnerClass() == UEpithPanelDefinition::StaticClass())
+			{
+				return false;
+			}
+		}
+
+		return true;
+	}));
+	DetailsView->SetObject(InDefinition);
 
 	ElementDetails = SNew(SEpithElementDetails, InDefinition);
 
 	Designer = SNew(SEpithPanelDesigner, InDefinition)
 		.ElementDetails(ElementDetails)
-		.OnDefinitionEdited_Lambda([WeakDetailsView]()
-		{
-			// The designer can change which element types live in the layout; the Details view has to rebuild for that
-			if (TSharedPtr<IDetailsView> PinnedDetailsView = WeakDetailsView.Pin())
-			{
-				PinnedDetailsView->ForceRefresh();
-			}
-		});
+		.PanelDetails(DetailsView);
 
-	// Details on the left, the designer beside it (the selected element's settings are in the designer's own side pane).
-	// v3: the Element tab moved into the designer; a new name so saved v2 layouts with that tab aren't restored.
-	const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout("Standalone_EpithPanelDefinitionEditor_v3")
+	// The designer on its own: its side panes hold the panel's settings and the selected element's.
+	// v4: the Details tab moved into the designer; a new name so saved layouts with that tab aren't restored.
+	const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout("Standalone_EpithPanelDefinitionEditor_v4")
 		->AddArea
 		(
 			FTabManager::NewPrimaryArea()
@@ -52,13 +64,7 @@ void FEpithPanelDefinitionEditor::Init(const EToolkitMode::Type Mode, const TSha
 			->Split
 			(
 				FTabManager::NewStack()
-				->SetSizeCoefficient(0.3f)
-				->AddTab(DetailsTabId, ETabState::OpenedTab)
-			)
-			->Split
-			(
-				FTabManager::NewStack()
-				->SetSizeCoefficient(0.7f)
+				->SetSizeCoefficient(1.0f)
 				->AddTab(DesignerTabId, ETabState::OpenedTab)
 			)
 		);
@@ -92,11 +98,6 @@ void FEpithPanelDefinitionEditor::RegisterTabSpawners(const TSharedRef<FTabManag
 
 	FAssetEditorToolkit::RegisterTabSpawners(InTabManager);
 
-	InTabManager->RegisterTabSpawner(DetailsTabId, FOnSpawnTab::CreateSP(this, &FEpithPanelDefinitionEditor::SpawnDetailsTab))
-		.SetDisplayName(LOCTEXT("DetailsTab", "Details"))
-		.SetGroup(WorkspaceMenuCategory.ToSharedRef())
-		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "LevelEditor.Tabs.Details"));
-
 	InTabManager->RegisterTabSpawner(DesignerTabId, FOnSpawnTab::CreateSP(this, &FEpithPanelDefinitionEditor::SpawnDesignerTab))
 		.SetDisplayName(LOCTEXT("DesignerTab", "Panel Designer"))
 		.SetGroup(WorkspaceMenuCategory.ToSharedRef())
@@ -107,17 +108,7 @@ void FEpithPanelDefinitionEditor::UnregisterTabSpawners(const TSharedRef<FTabMan
 {
 	FAssetEditorToolkit::UnregisterTabSpawners(InTabManager);
 
-	InTabManager->UnregisterTabSpawner(DetailsTabId);
 	InTabManager->UnregisterTabSpawner(DesignerTabId);
-}
-
-TSharedRef<SDockTab> FEpithPanelDefinitionEditor::SpawnDetailsTab(const FSpawnTabArgs& Args)
-{
-	return SNew(SDockTab)
-		.Label(LOCTEXT("DetailsTab", "Details"))
-		[
-			DetailsView.ToSharedRef()
-		];
 }
 
 TSharedRef<SDockTab> FEpithPanelDefinitionEditor::SpawnDesignerTab(const FSpawnTabArgs& Args)

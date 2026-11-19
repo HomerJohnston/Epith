@@ -1021,6 +1021,16 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeSidePane()
 			[
 				SNew(SVerticalBox)
 
+				// PANEL PROPERTIES: the definition's own settings (Target Class, Title and so on). Not Root: that's the layout, edited
+				// in the preview.
+				+ SVerticalBox::Slot()
+				.AutoHeight()
+				.Padding(0.0f, 0.0f, 0.0f, 2.0f)
+				[
+					EpithDesigner::MakeSidePaneFoldout(LOCTEXT("PanelPropertiesHeading", "PANEL PROPERTIES"), bPanelPropertiesSectionExpanded, TEXT("PanelPropertiesSectionExpanded"),
+						PanelDetails.IsValid() ? PanelDetails.ToSharedRef() : SNullWidget::NullWidget)
+				]
+
 				// ELEMENT: the settings of whatever is selected in the preview (its slot's, then its own)
 				+ SVerticalBox::Slot()
 				.AutoHeight()
@@ -1265,6 +1275,7 @@ void SEpithPanelDesigner::Construct(const FArguments& InArgs, UEpithPanelDefinit
 	Definition = InDefinition;
 	OnDefinitionEdited = InArgs._OnDefinitionEdited;
 	ElementDetails = InArgs._ElementDetails;
+	PanelDetails = InArgs._PanelDetails;
 
 	FPropertyEditorModule& PropertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
 
@@ -2257,7 +2268,7 @@ public:
 		}
 
 		DraggingLine = Line;
-		DragStartX = LocalX;
+		DragStartScreenX = MouseEvent.GetScreenSpacePosition().X;
 		DragStartWidth = GetColumnWidth(Line, MyGeometry);
 		LiveWidth = DragStartWidth;
 		bMoved = false;
@@ -2267,11 +2278,14 @@ public:
 
 	virtual FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
 	{
-		const float LocalX = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X;
-
 		if (DraggingLine != INDEX_NONE && HasMouseCapture())
 		{
-			const float Delta = LocalX - DragStartX;
+			// How far the cursor has moved on screen since the drag began, in the panel's own units (screen pixels / scale, for
+			// DPI and zoom). Not measured in the panel's local space: resizing a column resizes the panel, which moves that space
+			// (and the centred panel's left edge) under the cursor, and the width would chase itself.
+			// Half speed (DragSpeed): 10 px of cursor movement changes the column by 5 px.
+			const float Scale = FMath::Max(MyGeometry.GetAccumulatedLayoutTransform().GetScale(), UE_KINDA_SMALL_NUMBER);
+			const float Delta = (MouseEvent.GetScreenSpacePosition().X - DragStartScreenX) / Scale * DragSpeed;
 			bMoved |= FMath::Abs(Delta) >= 1.0f;
 			LiveWidth = FMath::RoundToFloat(FMath::Max(MinColumnWidth, DragStartWidth + Delta));
 
@@ -2287,7 +2301,7 @@ public:
 			return FReply::Handled();
 		}
 
-		HoveredLine = FindLine(LocalX, MyGeometry);
+		HoveredLine = FindLine(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X, MyGeometry);
 		return FReply::Unhandled();
 	}
 
@@ -2352,6 +2366,9 @@ private:
 	static constexpr float GrabDistance = 3.0f;
 	static constexpr float MinColumnWidth = 16.0f;
 
+	/** How much a column changes per pixel the cursor moves while dragging its line. */
+	static constexpr float DragSpeed = 0.5f;
+
 	float GetNameLineX() const
 	{
 		const FOptionalSize NameWidth = Columns->GetNameWidth();
@@ -2409,7 +2426,8 @@ private:
 
 	int32 HoveredLine = INDEX_NONE;
 	int32 DraggingLine = INDEX_NONE;
-	float DragStartX = 0.0f;
+	/** Where the cursor was on screen when the drag began. */
+	float DragStartScreenX = 0.0f;
 	float DragStartWidth = 0.0f;
 	float LiveWidth = 0.0f;
 	bool bMoved = false;
