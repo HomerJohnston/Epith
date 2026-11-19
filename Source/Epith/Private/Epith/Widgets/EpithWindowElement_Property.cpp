@@ -17,8 +17,8 @@ namespace EpithPropertyElement
 			.ColorAndOpacity(FSlateColor(EStyleColor::Warning));
 	}
 
-	/** The row for PropertyPath, or a warning. Null if no path is set. */
-	TSharedPtr<SWidget> MakeRow(FName PropertyPath, const FEpithDrawContext& Context)
+	/** The row for PropertyPath, or a warning. Null if no path is set. ChildDisplay: how the row shows its children. */
+	TSharedPtr<SWidget> MakeRow(FName PropertyPath, const FEpithDrawContext& Context, const FEpithRowChildDisplay& ChildDisplay)
 	{
 		if (PropertyPath.IsNone() || !Context.PropertyData.IsValid())
 		{
@@ -57,7 +57,7 @@ namespace EpithPropertyElement
 			return MakeWarning(FText::Format(LOCTEXT("PropertyElement_Duplicate", "{0} is already shown in this panel"), FText::FromName(PropertyPath)));
 		}
 
-		return EpithPropertyRow::Make(TreeNode.ToSharedRef(), Context.PropertyData.ToSharedRef(), 0, Context.Columns, Context.RowEdges);
+		return EpithPropertyRow::Make(TreeNode.ToSharedRef(), Context.PropertyData.ToSharedRef(), 0, Context.Columns, Context.RowEdges, ChildDisplay);
 	}
 }
 
@@ -65,7 +65,11 @@ TSharedPtr<SWidget> FEpithWindowElement_Property::Draw(const FEpithDrawContext& 
 {
 	const FName PropertyPath = PropertySelector.GetPropertyPath();
 
-	TSharedPtr<SWidget> Row = EpithPropertyElement::MakeRow(PropertyPath, Context);
+	FEpithRowChildDisplay RowChildDisplay;
+	RowChildDisplay.Mode = ChildDisplay;
+	RowChildDisplay.bRecursive = bRecursiveExpansion;
+
+	TSharedPtr<SWidget> Row = EpithPropertyElement::MakeRow(PropertyPath, Context, RowChildDisplay);
 
 	if (!Context.IsDesigning())
 	{

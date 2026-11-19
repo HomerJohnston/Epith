@@ -299,7 +299,7 @@ namespace EpithPropertyRow
 	}
 
 	/** @param Edges For the first child row; the rest keep only the bottom line, since each sits right under another row. */
-	TSharedRef<SWidget> MakeChildRows(const TArray<TSharedRef<IDetailTreeNode>>& Children, const TSharedRef<FEpithPropertyDataContainer>& PropertyData, int32 Depth, const TSharedPtr<FEpithColumnLayout>& Columns, const FEpithRowEdges& Edges)
+	TSharedRef<SWidget> MakeChildRows(const TArray<TSharedRef<IDetailTreeNode>>& Children, const TSharedRef<FEpithPropertyDataContainer>& PropertyData, int32 Depth, const TSharedPtr<FEpithColumnLayout>& Columns, const FEpithRowEdges& Edges, const FEpithRowChildDisplay& ChildDisplay)
 	{
 		TSharedRef<SVerticalBox> Box = SNew(SVerticalBox);
 
@@ -312,7 +312,7 @@ namespace EpithPropertyRow
 			const FName ChildKey = GetNodeKey(Child, Child->CreatePropertyHandle());
 
 			TSharedRef<SWidget> ChildWidget = PropertyData->TryClaimChildPath(ChildKey)
-				? Make(Child, PropertyData, Depth, Columns, ChildIndex == 0 ? Edges : LaterEdges)
+				? Make(Child, PropertyData, Depth, Columns, ChildIndex == 0 ? Edges : LaterEdges, ChildDisplay)
 				: MakeWarning(FText::Format(LOCTEXT("PropertyRow_ChildDuplicate", "{0} is already shown in this panel"), FText::FromName(ChildKey)), Depth);
 
 			Box->AddSlot()
@@ -337,11 +337,19 @@ namespace EpithPropertyRow
 		TWeakPtr<FEpithPropertyDataContainer> PropertyData;
 		TWeakPtr<SBox> Container;
 		FName Key;
-		int32 Depth = 0;
+
+		/** The child rows' depth: one deeper than their row, or the row's own when the row is left out (Children Only). */
+		int32 ChildDepth = 0;
 		TSharedPtr<FEpithColumnLayout> Columns;
 
-		/** Child rows sit under their parent row, so they never get a top line; they keep its bottom line. */
+		/** The first child row's top line. Unset under a row (it has the line); the row's own when the row is left out. */
+		TAttribute<bool> FirstChildTop;
+
+		/** Child rows keep their row's bottom line. */
 		bool bBottomEdge = false;
+
+		/** How the child rows show their own children. */
+		FEpithRowChildDisplay ChildDisplay;
 
 		bool bBuilt = false;
 		TArray<TWeakPtr<IDetailTreeNode>> BuiltChildren;
@@ -372,9 +380,10 @@ namespace EpithPropertyRow
 			}
 
 			FEpithRowEdges ChildEdges;
+			ChildEdges.Top = FirstChildTop;
 			ChildEdges.bBottom = bBottomEdge;
 
-			PinnedContainer->SetContent(MakeChildRows(Children, PinnedData.ToSharedRef(), Depth + 1, Columns, ChildEdges));
+			PinnedContainer->SetContent(MakeChildRows(Children, PinnedData.ToSharedRef(), ChildDepth, Columns, ChildEdges, ChildDisplay));
 			bBuilt = true;
 
 			// New child rows may be wider than the group's column; measure them now so the column doesn't jump a frame later
@@ -421,7 +430,19 @@ namespace EpithPropertyRow
 		}
 	};
 
-	TSharedRef<SWidget> Make(TSharedRef<IDetailTreeNode> Node, TSharedRef<FEpithPropertyDataContainer> PropertyData, int32 Depth, TSharedPtr<FEpithColumnLayout> Columns, const FEpithRowEdges& Edges)
+	/** Redraws a row's children whenever the generator refreshes and they've changed (e.g. an element was added to an array). Unbinds with Owner. */
+	void RebuildChildrenOnRefresh(const TSharedRef<FEpithPropertyDataContainer>& PropertyData, const SWidget* Owner, const TSharedRef<FChildListState>& ChildList)
+	{
+		PropertyData->OnRowsRefreshed.AddSPLambda(Owner, [ChildList]()
+		{
+			if (ChildList->bBuilt && ChildList->HaveChildrenChanged())
+			{
+				ChildList->Build();
+			}
+		});
+	}
+
+	TSharedRef<SWidget> Make(TSharedRef<IDetailTreeNode> Node, TSharedRef<FEpithPropertyDataContainer> PropertyData, int32 Depth, TSharedPtr<FEpithColumnLayout> Columns, const FEpithRowEdges& Edges, const FEpithRowChildDisplay& ChildDisplay)
 	{
 		FDetailTreeNode& DetailNode = AsDetailTreeNode(*Node);
 		TSharedPtr<IPropertyHandle> Handle = Node->CreatePropertyHandle();
@@ -435,15 +456,49 @@ namespace EpithPropertyRow
 		const bool bIsContainerProperty = RowProperty && (RowProperty->IsA<FArrayProperty>() || RowProperty->IsA<FSetProperty>() || RowProperty->IsA<FMapProperty>());
 		const bool bCanHaveChildren = Children.Num() > 0 || bIsContainerProperty;
 
-		// Some rows have no header of their own and only show their children (e.g. a struct with ShowOnlyInnerProperties)
+		// Some rows have no header of their own and only show their children (e.g. a struct with ShowOnlyInnerProperties). The row
+		// is invisible, so its children are treated as this row would be.
 		if (DetailNode.ShouldShowOnlyChildren())
 		{
 			return SNew(SBox)
 				.Visibility(MakeNodeVisibility(Node))
 				[
-					WrapIfNotInstanceEditable(MakeChildRows(Children, PropertyData, Depth, Columns, Edges), Handle, *PropertyData)
+					WrapIfNotInstanceEditable(MakeChildRows(Children, PropertyData, Depth, Columns, Edges, ChildDisplay), Handle, *PropertyData)
 				];
 		}
+
+		// How this row shows its children; only matters if it can have any
+		const EEpithPropertyChildDisplay Mode = bCanHaveChildren ? ChildDisplay.Mode : EEpithPropertyChildDisplay::Foldout;
+
+		// Children Only: no row for the property itself; its children take its place, at its depth and with its edges. Still a
+		// live list, so an array's rows follow elements being added and removed.
+		if (Mode == EEpithPropertyChildDisplay::ChildrenOnly)
+		{
+			TSharedRef<SBox> ChildrenOnlyContainer = SNew(SBox);
+
+			TSharedRef<FChildListState> ChildList = MakeShared<FChildListState>();
+			ChildList->Node = Node;
+			ChildList->PropertyData = PropertyData;
+			ChildList->Container = ChildrenOnlyContainer;
+			ChildList->Key = Key;
+			ChildList->ChildDepth = Depth;
+			ChildList->Columns = Columns;
+			ChildList->FirstChildTop = Edges.Top;
+			ChildList->bBottomEdge = Edges.bBottom;
+			ChildList->ChildDisplay = ChildDisplay.ForChildren();
+			ChildList->Build();
+
+			RebuildChildrenOnRefresh(PropertyData, &ChildrenOnlyContainer.Get(), ChildList);
+
+			return SNew(SBox)
+				.Visibility(MakeNodeVisibility(Node))
+				[
+					WrapIfNotInstanceEditable(ChildrenOnlyContainer, Handle, *PropertyData)
+				];
+		}
+
+		// Always Expanded: the children are always shown, and the row has no arrow
+		const bool bAlwaysExpanded = Mode == EEpithPropertyChildDisplay::AlwaysExpanded;
 
 		FDetailWidgetRow Row;
 		const bool bHasRowContent = DetailNode.GenerateStandaloneWidget(Row) && Row.HasAnyContent();
@@ -474,14 +529,20 @@ namespace EpithPropertyRow
 
 		// Expander arrow for structs, arrays, maps, sets and customized children; a spacer keeps nested rows aligned
 		TSharedPtr<SBox> ChildContainer;
+		TSharedPtr<FChildListState> ChildListForArrow;
 
 		if (bCanHaveChildren)
 		{
 			TWeakPtr<FEpithPropertyDataContainer> WeakPropertyData = PropertyData;
 
 			ChildContainer = SNew(SBox)
-				.Visibility_Lambda([WeakPropertyData, Key]()
+				.Visibility_Lambda([WeakPropertyData, Key, bAlwaysExpanded]()
 				{
+					if (bAlwaysExpanded)
+					{
+						return EVisibility::Visible;
+					}
+
 					TSharedPtr<FEpithPropertyDataContainer> PinnedData = WeakPropertyData.Pin();
 					return PinnedData.IsValid() && PinnedData->IsExpanded(Key) ? EVisibility::Visible : EVisibility::Collapsed;
 				});
@@ -491,24 +552,27 @@ namespace EpithPropertyRow
 			ChildList->PropertyData = PropertyData;
 			ChildList->Container = ChildContainer;
 			ChildList->Key = Key;
-			ChildList->Depth = Depth;
+			ChildList->ChildDepth = Depth + 1;
 			ChildList->Columns = Columns;
 			ChildList->bBottomEdge = Edges.bBottom;
+			ChildList->ChildDisplay = ChildDisplay.ForChildren();
 
-			if (PropertyData->IsExpanded(Key))
+			if (bAlwaysExpanded || PropertyData->IsExpanded(Key))
 			{
 				ChildList->Build();
 			}
 
 			// When the generator refreshes (e.g. an element was added to this array), redraw just this row's children if they changed.
 			// Bound to the child container's lifetime, so it unbinds itself when the row goes away.
-			PropertyData->OnRowsRefreshed.AddSPLambda(ChildContainer.Get(), [ChildList]()
-			{
-				if (ChildList->bBuilt && ChildList->HaveChildrenChanged())
-				{
-					ChildList->Build();
-				}
-			});
+			RebuildChildrenOnRefresh(PropertyData, ChildContainer.Get(), ChildList);
+
+			ChildListForArrow = ChildList;
+		}
+
+		if (bCanHaveChildren && !bAlwaysExpanded)
+		{
+			TWeakPtr<FEpithPropertyDataContainer> WeakPropertyData = PropertyData;
+			TSharedRef<FChildListState> ChildList = ChildListForArrow.ToSharedRef();
 
 			NameArea->AddSlot()
 			.AutoWidth()
@@ -553,7 +617,7 @@ namespace EpithPropertyRow
 		}
 		else
 		{
-			// Rows without children keep the arrow's space, so names line up (the Details panel does the same)
+			// Rows without an arrow keep its space, so names line up (the Details panel does the same)
 			NameArea->AddSlot()
 			.AutoWidth()
 			[
