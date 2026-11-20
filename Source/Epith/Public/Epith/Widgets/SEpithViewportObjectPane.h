@@ -45,6 +45,9 @@ protected:
 
 	bool bRebuildPending = false;
 
+	/** A full rebuild (new property rows) is waiting for the next frame (RequestFullRebuild). */
+	bool bFullRebuildPending = false;
+
 	/** Guards against a customization that refreshes its rows every frame, which would otherwise rebuild us forever. */
 	int32 RapidRebuildCount = 0;
 	double LastAutoRebuildTime = 0.0;
@@ -58,6 +61,15 @@ protected:
 	void RequestRebuild();
 
 	EActiveTimerReturnType HandleDeferredRebuild(double InCurrentTime, float InDeltaTime);
+
+	/**
+	 * Build() on the next frame. For rebuilds triggered by engine events (objects reinstanced, the panel definition edited):
+	 * those can fire from inside a property row generator's own tick (e.g. emptying an array reruns the actor's construction
+	 * scripts, which replaces its components), and Build() releases the old generator, which mustn't happen while it ticks.
+	 */
+	void RequestFullRebuild();
+
+	EActiveTimerReturnType HandleDeferredFullRebuild(double InCurrentTime, float InDeltaTime);
 
 	/** Makes a new property container for Target and draws the layout. */
 	void Build();

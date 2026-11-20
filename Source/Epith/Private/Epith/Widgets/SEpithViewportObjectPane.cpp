@@ -52,7 +52,7 @@ void SEpithViewportObjectPane::OnObjectsReinstanced(const TMap<UObject*, UObject
 
 	if (bNeedsRebuild)
 	{
-		Build();
+		RequestFullRebuild();
 	}
 }
 
@@ -61,8 +61,29 @@ void SEpithViewportObjectPane::OnObjectPropertyChanged(UObject* Object, FPropert
 	// Only rebuild when the layout changes. Rebuilding on changes to the target would tear down the widget being edited.
 	if (Object && Object == PanelDefinition.Get())
 	{
-		Build();
+		RequestFullRebuild();
 	}
+}
+
+void SEpithViewportObjectPane::RequestFullRebuild()
+{
+	if (bFullRebuildPending)
+	{
+		return;
+	}
+
+	bFullRebuildPending = true;
+
+	RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SEpithViewportObjectPane::HandleDeferredFullRebuild));
+}
+
+EActiveTimerReturnType SEpithViewportObjectPane::HandleDeferredFullRebuild(double InCurrentTime, float InDeltaTime)
+{
+	bFullRebuildPending = false;
+
+	Build();
+
+	return EActiveTimerReturnType::Stop;
 }
 
 void SEpithViewportObjectPane::RequestRebuild()

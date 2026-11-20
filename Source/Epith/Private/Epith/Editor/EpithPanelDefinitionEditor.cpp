@@ -8,10 +8,13 @@
 #include "Framework/Docking/TabManager.h"
 #include "Styling/AppStyle.h"
 #include "Widgets/Docking/SDockTab.h"
+#include "Widgets/Layout/SBox.h"
+#include "Widgets/Text/STextBlock.h"
 
 #define LOCTEXT_NAMESPACE "EpithPanelDefinitionEditor"
 
 const FName FEpithPanelDefinitionEditor::DesignerTabId(TEXT("EpithPanelDefinitionEditor_Designer"));
+const FName FEpithPanelDefinitionEditor::TutorialTabId(TEXT("EpithPanelDefinitionEditor_Tutorial"));
 
 void FEpithPanelDefinitionEditor::Init(const EToolkitMode::Type Mode, const TSharedPtr<IToolkitHost>& InitToolkitHost, UEpithPanelDefinition* InDefinition)
 {
@@ -54,9 +57,9 @@ void FEpithPanelDefinitionEditor::Init(const EToolkitMode::Type Mode, const TSha
 		.ElementDetails(ElementDetails)
 		.PanelDetails(DetailsView);
 
-	// The designer on its own: its side panes hold the panel's settings and the selected element's.
-	// v4: the Details tab moved into the designer; a new name so saved layouts with that tab aren't restored.
-	const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout("Standalone_EpithPanelDefinitionEditor_v4")
+	// The designer (its side panes hold the panel's settings and the selected element's), with the Tutorial tab beside it.
+	// v5: the Tutorial tab was added; a new name so saved layouts without it aren't restored.
+	const TSharedRef<FTabManager::FLayout> Layout = FTabManager::NewLayout("Standalone_EpithPanelDefinitionEditor_v5")
 		->AddArea
 		(
 			FTabManager::NewPrimaryArea()
@@ -66,6 +69,8 @@ void FEpithPanelDefinitionEditor::Init(const EToolkitMode::Type Mode, const TSha
 				FTabManager::NewStack()
 				->SetSizeCoefficient(1.0f)
 				->AddTab(DesignerTabId, ETabState::OpenedTab)
+				->AddTab(TutorialTabId, ETabState::OpenedTab)
+				->SetForegroundTab(DesignerTabId)
 			)
 		);
 
@@ -102,6 +107,11 @@ void FEpithPanelDefinitionEditor::RegisterTabSpawners(const TSharedRef<FTabManag
 		.SetDisplayName(LOCTEXT("DesignerTab", "Panel Designer"))
 		.SetGroup(WorkspaceMenuCategory.ToSharedRef())
 		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Edit"));
+
+	InTabManager->RegisterTabSpawner(TutorialTabId, FOnSpawnTab::CreateSP(this, &FEpithPanelDefinitionEditor::SpawnTutorialTab))
+		.SetDisplayName(LOCTEXT("TutorialTab", "Tutorial"))
+		.SetGroup(WorkspaceMenuCategory.ToSharedRef())
+		.SetIcon(FSlateIcon(FAppStyle::GetAppStyleSetName(), "Icons.Help"));
 }
 
 void FEpithPanelDefinitionEditor::UnregisterTabSpawners(const TSharedRef<FTabManager>& InTabManager)
@@ -109,6 +119,7 @@ void FEpithPanelDefinitionEditor::UnregisterTabSpawners(const TSharedRef<FTabMan
 	FAssetEditorToolkit::UnregisterTabSpawners(InTabManager);
 
 	InTabManager->UnregisterTabSpawner(DesignerTabId);
+	InTabManager->UnregisterTabSpawner(TutorialTabId);
 }
 
 TSharedRef<SDockTab> FEpithPanelDefinitionEditor::SpawnDesignerTab(const FSpawnTabArgs& Args)
@@ -117,6 +128,21 @@ TSharedRef<SDockTab> FEpithPanelDefinitionEditor::SpawnDesignerTab(const FSpawnT
 		.Label(LOCTEXT("DesignerTab", "Panel Designer"))
 		[
 			Designer.ToSharedRef()
+		];
+}
+
+TSharedRef<SDockTab> FEpithPanelDefinitionEditor::SpawnTutorialTab(const FSpawnTabArgs& Args)
+{
+	// A placeholder until the tutorial is written: how to build a panel, for someone new to Epith
+	return SNew(SDockTab)
+		.Label(LOCTEXT("TutorialTab", "Tutorial"))
+		[
+			SNew(SBox)
+			.Padding(16)
+			[
+				SNew(STextBlock)
+				.Text(LOCTEXT("TutorialPlaceholder", "Hello World"))
+			]
 		];
 }
 

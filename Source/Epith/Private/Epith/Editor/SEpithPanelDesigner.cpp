@@ -6,7 +6,6 @@
 #include "Epith/Widgets/SEpithViewportObjectPane.h"
 #include "Brushes/SlateRoundedBoxBrush.h"
 #include "Misc/ConfigCacheIni.h"
-#include "ISinglePropertyView.h"
 #include "PropertyEditorModule.h"
 #include "ScopedTransaction.h"
 #include "Editor.h"
@@ -1409,28 +1408,10 @@ void SEpithPanelDesigner::Construct(const FArguments& InArgs, UEpithPanelDefinit
 	ElementDetails = InArgs._ElementDetails;
 	PanelDetails = InArgs._PanelDetails;
 
-	FPropertyEditorModule& PropertyEditor = FModuleManager::LoadModuleChecked<FPropertyEditorModule>("PropertyEditor");
-
-	FSinglePropertyParams TargetClassParams;
-	TargetClassParams.NameOverride = LOCTEXT("TargetClass", "Target Class");
-
-	// TargetClass is protected on the definition, so it's found by name. Edits through this view are undoable and broadcast a property change.
-	TSharedPtr<ISinglePropertyView> TargetClassView = InDefinition ? PropertyEditor.CreateSingleProperty(InDefinition, TEXT("TargetClass"), TargetClassParams) : nullptr;
-
+	// The Target Class is picked in PANEL PROPERTIES, in the side pane
 	ChildSlot
 	[
 		SNew(SVerticalBox)
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		.Padding(8)
-		[
-			TargetClassView.IsValid() ? TargetClassView.ToSharedRef() : SNullWidget::NullWidget
-		]
-		+ SVerticalBox::Slot()
-		.AutoHeight()
-		[
-			SNew(SSeparator)
-		]
 		+ SVerticalBox::Slot()
 		.FillHeight(1.0f)
 		[
@@ -1690,7 +1671,7 @@ void SEpithPanelDesigner::Redraw()
 	{
 		PreviewArea->SetContent(
 			SNew(STextBlock)
-			.Text(LOCTEXT("PickTargetClass", "Pick a Target Class above to start building the panel."))
+			.Text(LOCTEXT("PickTargetClass", "Pick a Target Class in PANEL PROPERTIES (on the right) to start building the panel."))
 			.ColorAndOpacity(FSlateColor::UseSubduedForeground()));
 
 		UpdateSelection();
@@ -1801,7 +1782,7 @@ void SEpithPanelDesigner::Edit(const FText& Description, TFunction<void()> Mutat
 
 void SEpithPanelDesigner::OnObjectPropertyChanged(UObject* Object, FPropertyChangedEvent& PropertyChangedEvent)
 {
-	// Covers the Target Class picker, the Details tab, the ELEMENT section and our own edits
+	// Covers PANEL PROPERTIES (the Target Class among them), the ELEMENT section and our own edits
 	if (Object && Object == Definition.Get())
 	{
 		// A change from elsewhere may have moved slot data; changes made in the ELEMENT section itself don't move anything

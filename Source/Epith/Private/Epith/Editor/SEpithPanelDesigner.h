@@ -23,8 +23,8 @@ struct FEpithPropertyDataContainer;
 /**
  * The panel designer: a live preview of a panel definition that you build by clicking in it.
  *
- * - The top row picks the Target Class. Until one is picked, there's nothing to design.
- * - Below it, the panel is drawn the way the viewport draws it, but every slot gets designer chrome (see IEpithDesigner):
+ * - Until a Target Class is picked (in PANEL PROPERTIES), there's nothing to design.
+ * - The panel is drawn the way the viewport draws it, but every slot gets designer chrome (see IEpithDesigner):
  *   empty slots are dashed boxes with an element picker, elements have a hover outline and a menu, and groups get "+ Add".
  * - Property rows preview the class defaults and can't be edited here.
  * - Every change is an undoable transaction on the panel definition; the preview redraws after each one.

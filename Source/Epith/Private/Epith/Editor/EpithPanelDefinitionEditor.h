@@ -8,7 +8,7 @@ class SEpithPanelDesigner;
 class UEpithPanelDefinition;
 
 /**
- * The asset editor for Epith panel definitions: the panel designer, whose side panes hold the definition's settings (PANEL
+ * The asset editor for Epith panel definitions: a Tutorial tab, and the panel designer, whose side panes hold the definition's settings (PANEL
  * PROPERTIES) and the selected element's (ELEMENT).
  * Opened by UAssetDefinition_EpithPanelDefinition::OpenAssets.
  */
@@ -28,6 +28,9 @@ public:
 private:
 	TSharedRef<SDockTab> SpawnDesignerTab(const FSpawnTabArgs& Args);
 
+	/** How to use the panel editor, for someone new to Epith (a placeholder for now). */
+	TSharedRef<SDockTab> SpawnTutorialTab(const FSpawnTabArgs& Args);
+
 	TWeakObjectPtr<UEpithPanelDefinition> Definition;
 
 	/** The definition's settings, minus Root: the designer's PANEL PROPERTIES section. */
@@ -39,4 +42,5 @@ private:
 	TSharedPtr<SEpithElementDetails> ElementDetails;
 
 	static const FName DesignerTabId;
+	static const FName TutorialTabId;
 };

@@ -205,8 +205,9 @@ EActiveTimerReturnType SEpithViewportMasterPane::CheckTargets(double InCurrentTi
 	// A component with a panel definition was added, removed or renamed (by a button, the Details panel, undo, a script...)
 	const bool bPanesChanged = !bAnyPaneStale && MakePaneSignature(Target.Get()) != BuiltPaneSignature;
 
-	if (bAnyPaneStale || bPanesChanged)
+	if (bRebuildRequested || bAnyPaneStale || bPanesChanged)
 	{
+		bRebuildRequested = false;
 		RebuildPanes();
 
 		if (!HasPanes())
@@ -221,11 +222,13 @@ EActiveTimerReturnType SEpithViewportMasterPane::CheckTargets(double InCurrentTi
 
 void SEpithViewportMasterPane::OnObjectsReplaced(const TMap<UObject*, UObject*>& ReplacementMap)
 {
-	// Blueprint recompiles replace the actor instance; follow it rather than closing the panel.
+	// Blueprint recompiles replace the actor instance; follow it rather than closing the panel. The panes are rebuilt by the
+	// next CheckTargets, not here: this can fire from inside a property row generator's tick, and rebuilding releases the
+	// panes' generators, which mustn't happen while one ticks.
 	if (UObject* const* NewTarget = ReplacementMap.Find(Target.Get(true)))
 	{
 		Target = *NewTarget;
-		RebuildPanes();
+		bRebuildRequested = true;
 	}
 }
 
