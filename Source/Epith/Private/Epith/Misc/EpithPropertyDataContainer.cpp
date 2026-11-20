@@ -2,6 +2,7 @@
 
 #include "IPropertyRowGenerator.h"
 #include "Epith/EpithLog.h"
+#include "UObject/UObjectGlobals.h"
 
 FEpithPropertyDataContainer::FEpithPropertyDataContainer(UObject* InTarget, TSharedPtr<TSet<FName>> InExpandedPaths)
 	: ExpandedPaths(InExpandedPaths)
@@ -14,10 +15,14 @@ FEpithPropertyDataContainer::FEpithPropertyDataContainer(UObject* InTarget, TSha
 	Target = InTarget;
 	
 	Build(Target.Pin());
+
+	FCoreUObjectDelegates::OnObjectsReplaced.AddRaw(this, &FEpithPropertyDataContainer::HandleObjectsReplaced);
 }
 
 FEpithPropertyDataContainer::~FEpithPropertyDataContainer()
 {
+	FCoreUObjectDelegates::OnObjectsReplaced.RemoveAll(this);
+
 	if (PropertyRowGenerator.IsValid())
 	{
 		PropertyRowGenerator->OnRowsRefreshed().RemoveAll(this);
@@ -45,6 +50,26 @@ void FEpithPropertyDataContainer::HandleRowsRefreshed()
 	{
 		OnRowsRefreshed.Broadcast();
 	}
+}
+
+void FEpithPropertyDataContainer::HandleObjectsReplaced(const TMap<UObject*, UObject*>& ReplacementMap)
+{
+	// The old object may already be unreachable (it's being thrown away), so look it up by its raw pointer
+	UObject* const* NewTarget = ReplacementMap.Find(Target.GetEvenIfUnreachable());
+
+	if (!NewTarget || !*NewTarget || !PropertyRowGenerator.IsValid())
+	{
+		return;
+	}
+
+	Target = *NewTarget;
+
+	// Point the generator at the new object straight away, as the Details panel does (SDetailsView::ReplaceObjects). This can
+	// happen in the middle of one of the generator's own edits: emptying an array reruns the actor's construction scripts, which
+	// replaces its components, and the generator then rebuilds that array's rows. Its old rows must no longer reach the
+	// replaced object by then: re-targeting empties their object list, so they find nothing and stop, instead of reading from
+	// a dead object (a crash in FItemPropertyNode::InitChildNodes).
+	PropertyRowGenerator->SetObjects({ *NewTarget });
 }
 
 void FEpithPropertyDataContainer::Build(TStrongObjectPtr<UObject> BuildTarget)

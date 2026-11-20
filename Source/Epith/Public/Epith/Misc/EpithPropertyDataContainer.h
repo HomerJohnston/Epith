@@ -36,6 +36,9 @@ protected:
 
 	void HandleRowsRefreshed();
 
+	/** The target was replaced (a Blueprint recompile, or construction scripts recreating a component): follow it right away. */
+	void HandleObjectsReplaced(const TMap<UObject*, UObject*>& ReplacementMap);
+
 	void Build(TStrongObjectPtr<UObject> BuildTarget);
 
 public:
