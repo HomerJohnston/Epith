@@ -32,7 +32,7 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 	// The previous slot's widget, if it holds a Property element whose row sits flush against this slot (no padding or border between)
 	TWeakPtr<SWidget> RowAbove;
 
-	// That slot's own top-line rule: if its row is hidden (e.g. EditConditionHides), the row below takes the line in its place
+	// That slot's own top-line rule: if its row is hidden (e.g. by a customization), the row below takes the line in its place
 	TAttribute<bool> TopLineAbove;
 
 	for (int32 i = 0; i < Slots.Num(); ++i)

@@ -339,7 +339,8 @@ bool FEpithPropertyRowEditConditionHidesTest::RunTest(const FString& Parameters)
 	// A widget's bound visibility is cached and only re-read when the widget is laid out, so lay it out before each check
 	State->Row->SlatePrepass(1.0f);
 
-	TestTrue(TEXT("Hidden while the condition is false"), State->Row->GetVisibility() == EVisibility::Collapsed);
+	// Epith shows EditConditionHides rows greyed out rather than hiding them
+	TestTrue(TEXT("Still shown while the condition is false"), State->Row->GetVisibility() == EVisibility::Visible);
 
 	// Flip the condition the way the panel would: through the property handle
 	TSharedPtr<IPropertyHandle> ConditionHandle = State->PropertyData->FindPropertyHandle(TEXT("bCondition"));

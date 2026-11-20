@@ -11,8 +11,9 @@ class FEpithColumnLayout;
 
 /**
  * Draws property rows the way the Details panel does: edit-condition toggle, name, value, reset-to-default button,
- * and expandable struct/array children. Rows hide themselves when the details system hides them (e.g. EditConditionHides),
- * and are shown read-only when the property isn't editable on placed instances.
+ * and expandable struct/array children. Rows hide themselves when the details system hides them (e.g. a customization's
+ * Visibility), except for EditConditionHides: those rows stay, greyed out like any other unmet edit condition. Rows are shown
+ * read-only when the property isn't editable on placed instances.
  */
 /** How a row shows its children (see EEpithPropertyChildDisplay), and whether its children's rows do the same. */
 struct FEpithRowChildDisplay

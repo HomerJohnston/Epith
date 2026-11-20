@@ -18,6 +18,7 @@
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
+#include "Widgets/Layout/SBorder.h"
 #include "Widgets/Layout/SBox.h"
 #include "Widgets/Layout/SSpacer.h"
 #include "Widgets/Text/STextBlock.h"
@@ -162,12 +163,35 @@ namespace EpithPropertyRow
 		}
 	}
 
-	/** Collapsed whenever the details system hides the row: EditConditionHides, a customization's Visibility, HideProperty, ... */
-	TAttribute<EVisibility> MakeNodeVisibility(const TSharedRef<IDetailTreeNode>& Node)
+	/**
+	 * For a property marked EditConditionHides: whether its edit condition is unmet right now, which is when the Details panel
+	 * hides it. Null for any other property (or a row with no edit condition to read).
+	 */
+	TFunction<bool()> MakeIsEditConditionHiding(const TSharedPtr<IPropertyHandle>& Handle, const FDetailWidgetRow& Row)
+	{
+		if (!Handle.IsValid() || !Handle->IsValidHandle() || !Handle->HasMetaData(TEXT("EditConditionHides")) || !Row.EditConditionValue.IsSet())
+		{
+			return nullptr;
+		}
+
+		TAttribute<bool> EditConditionValue = Row.EditConditionValue;
+
+		return [EditConditionValue]()
+		{
+			return !EditConditionValue.Get(true);
+		};
+	}
+
+	/**
+	 * Collapsed whenever the details system hides the row: a customization's Visibility, HideProperty, ... Except for
+	 * EditConditionHides: our rows stay visible then, greyed out and not editable like any other unmet edit condition
+	 * (IsEditConditionHiding, from MakeIsEditConditionHiding).
+	 */
+	TAttribute<EVisibility> MakeNodeVisibility(const TSharedRef<IDetailTreeNode>& Node, TFunction<bool()> IsEditConditionHiding = nullptr)
 	{
 		TWeakPtr<IDetailTreeNode> WeakNode = Node;
 
-		return TAttribute<EVisibility>::CreateLambda([WeakNode]()
+		return TAttribute<EVisibility>::CreateLambda([WeakNode, IsEditConditionHiding]()
 		{
 			TSharedPtr<IDetailTreeNode> PinnedNode = WeakNode.Pin();
 
@@ -176,8 +200,45 @@ namespace EpithPropertyRow
 				return EVisibility::Visible;
 			}
 
-			return AsDetailTreeNode(*PinnedNode).GetVisibility() == ENodeVisibility::ForcedHidden ? EVisibility::Collapsed : EVisibility::Visible;
+			if (AsDetailTreeNode(*PinnedNode).GetVisibility() != ENodeVisibility::ForcedHidden)
+			{
+				return EVisibility::Visible;
+			}
+
+			// Hidden only because of EditConditionHides (as far as we can tell): shown greyed out instead
+			return IsEditConditionHiding && IsEditConditionHiding() ? EVisibility::Visible : EVisibility::Collapsed;
 		});
+	}
+
+	/** Draws a row at half opacity while it's shown only because we don't hide EditConditionHides rows (see MakeNodeVisibility). */
+	TSharedRef<SWidget> FadeWhileEditConditionHiding(TSharedRef<SWidget> Content, TFunction<bool()> IsEditConditionHiding)
+	{
+		if (!IsEditConditionHiding)
+		{
+			return Content;
+		}
+
+		return SNew(SBorder)
+			.BorderImage(FAppStyle::GetBrush("NoBorder"))
+			.Padding(0)
+			.ColorAndOpacity_Lambda([IsEditConditionHiding]()
+			{
+				return FLinearColor(1.0f, 1.0f, 1.0f, IsEditConditionHiding() ? 0.2f : 1.0f);
+			})
+			[
+				Content
+			];
+	}
+
+	/** Greys out a row with no header of its own (whose header would show the unmet edit condition) along with its children. */
+	TSharedRef<SWidget> DisableWhileEditConditionUnmet(TSharedRef<SWidget> Content, const FDetailWidgetRow& Row)
+	{
+		if (Row.EditConditionValue.IsSet())
+		{
+			Content->SetEnabled(Row.EditConditionValue);
+		}
+
+		return Content;
 	}
 
 	/** The checkbox for properties with an inline edit condition (InlineEditConditionToggle). */
@@ -451,6 +512,12 @@ namespace EpithPropertyRow
 		TArray<TSharedRef<IDetailTreeNode>> Children;
 		GatherDrawableChildren(Node, Children);
 
+		FDetailWidgetRow Row;
+		const bool bHasRowContent = DetailNode.GenerateStandaloneWidget(Row) && Row.HasAnyContent();
+
+		// EditConditionHides rows stay visible (greyed out) while their edit condition is unmet
+		const TFunction<bool()> IsEditConditionHiding = MakeIsEditConditionHiding(Handle, Row);
+
 		// Arrays, sets and maps can gain children later (an empty array gets its first element), so they always get an expander
 		const FProperty* RowProperty = Handle.IsValid() && Handle->IsValidHandle() ? Handle->GetProperty() : nullptr;
 		const bool bIsContainerProperty = RowProperty && (RowProperty->IsA<FArrayProperty>() || RowProperty->IsA<FSetProperty>() || RowProperty->IsA<FMapProperty>());
@@ -461,9 +528,9 @@ namespace EpithPropertyRow
 		if (DetailNode.ShouldShowOnlyChildren())
 		{
 			return SNew(SBox)
-				.Visibility(MakeNodeVisibility(Node))
+				.Visibility(MakeNodeVisibility(Node, IsEditConditionHiding))
 				[
-					WrapIfNotInstanceEditable(MakeChildRows(Children, PropertyData, Depth, Columns, Edges, ChildDisplay), Handle, *PropertyData)
+					FadeWhileEditConditionHiding(WrapIfNotInstanceEditable(DisableWhileEditConditionUnmet(MakeChildRows(Children, PropertyData, Depth, Columns, Edges, ChildDisplay), Row), Handle, *PropertyData), IsEditConditionHiding)
 				];
 		}
 
@@ -491,17 +558,15 @@ namespace EpithPropertyRow
 			RebuildChildrenOnRefresh(PropertyData, &ChildrenOnlyContainer.Get(), ChildList);
 
 			return SNew(SBox)
-				.Visibility(MakeNodeVisibility(Node))
+				.Visibility(MakeNodeVisibility(Node, IsEditConditionHiding))
 				[
-					WrapIfNotInstanceEditable(ChildrenOnlyContainer, Handle, *PropertyData)
+					FadeWhileEditConditionHiding(WrapIfNotInstanceEditable(DisableWhileEditConditionUnmet(ChildrenOnlyContainer, Row), Handle, *PropertyData), IsEditConditionHiding)
 				];
 		}
 
 		// Always Expanded: the children are always shown, and the row has no arrow
 		const bool bAlwaysExpanded = Mode == EEpithPropertyChildDisplay::AlwaysExpanded;
 
-		FDetailWidgetRow Row;
-		const bool bHasRowContent = DetailNode.GenerateStandaloneWidget(Row) && Row.HasAnyContent();
 
 		// Everything left of the value: indent, expander, edit-condition toggle, name. In a group this whole area gets the
 		// group's shared name-column width, so values line up even for nested (indented) rows, like the Details panel.
@@ -832,9 +897,9 @@ namespace EpithPropertyRow
 		}
 
 		return SNew(SBox)
-			.Visibility(MakeNodeVisibility(Node))
+			.Visibility(MakeNodeVisibility(Node, IsEditConditionHiding))
 			[
-				WrapIfNotInstanceEditable(RowWidget, Handle, *PropertyData)
+				FadeWhileEditConditionHiding(WrapIfNotInstanceEditable(RowWidget, Handle, *PropertyData), IsEditConditionHiding)
 			];
 	}
 }
