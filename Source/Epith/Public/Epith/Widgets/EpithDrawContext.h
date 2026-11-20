@@ -70,10 +70,17 @@ struct FEpithSlotActions
  */
 class FEpithColumnLayout;
 
+/** Makes a new slot in a group (at its end, or at a position) and returns where its element goes. */
+using FEpithMakeSlot = TFunction<TInstancedStruct<FEpithWindowElement>*()>;
+
 class IEpithDesigner
 {
 public:
 	virtual ~IEpithDesigner() = default;
+
+	/** Around the drawing of each slot (EpithDraw::DrawSlot), so the designer knows which slots a widget it makes sits inside. */
+	virtual void BeginSlot(const TInstancedStruct<FEpithWindowElement>& Slot) {}
+	virtual void EndSlot() {}
 
 	/** A slot with nothing in it yet: a dashed box with a menu to choose what goes in it. */
 	virtual TSharedRef<SWidget> MakeEmptySlot(TInstancedStruct<FEpithWindowElement>& Slot, const FEpithSlotActions& Actions) = 0;
@@ -81,8 +88,11 @@ public:
 	/** Wraps an element's widget with a hover outline and a menu (nest in a container, clear, remove, move). */
 	virtual TSharedRef<SWidget> WrapElement(TInstancedStruct<FEpithWindowElement>& Slot, TSharedRef<SWidget> ElementWidget, const FEpithSlotActions& Actions) = 0;
 
-	/** A "+" icon button that runs AddSlot in a transaction, e.g. at the end of a group. Label is its tooltip. */
-	virtual TSharedRef<SWidget> MakeAddButton(const FText& Label, TFunction<void()> AddSlot) = 0;
+	/**
+	 * A "+" icon button that runs AddSlot in a transaction, e.g. at the end of a group. Label is its tooltip.
+	 * An element dragged onto it moves into the new slot AddSlot makes.
+	 */
+	virtual TSharedRef<SWidget> MakeAddButton(const FText& Label, FEpithMakeSlot AddSlot) = 0;
 
 	/** A dropdown for picking a property path on the panel's target class. OnPicked runs in a transaction. */
 	virtual TSharedRef<SWidget> MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked) = 0;
@@ -90,8 +100,9 @@ public:
 	/**
 	 * A thin divider between two slots that inserts a new slot there when clicked: a 1px line inside a 3px button.
 	 * bRunsHorizontally: a horizontal line (between slots stacked vertically); otherwise a vertical line (between slots in a row).
+	 * An element dragged onto it moves into the new slot InsertSlot makes.
 	 */
-	virtual TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, TFunction<void()> InsertSlot) = 0;
+	virtual TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot) = 0;
 
 	/** A "Pick control..." dropdown listing every special control type (subclasses of FEpithSpecialControl). */
 	virtual TSharedRef<SWidget> MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked) = 0;

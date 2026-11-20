@@ -98,7 +98,7 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 			[
 				Context.Designer->MakeInsertDivider(true, LOCTEXT("VerticalGroup_Insert", "Insert Slot into Vertical Group"), [SlotsPtr = &MutableSlots, i]()
 				{
-					SlotsPtr->InsertDefaulted(i);
+					return &SlotsPtr->InsertDefaulted_GetRef(i).Child;
 				})
 			];
 		}
@@ -126,7 +126,7 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 		[
 			Context.Designer->MakeAddButton(LOCTEXT("VerticalGroup_Add", "Add Slot to Vertical Group"), [SlotsPtr = &MutableSlots]()
 			{
-				SlotsPtr->AddDefaulted();
+				return &SlotsPtr->AddDefaulted_GetRef().Child;
 			})
 		];
 	}

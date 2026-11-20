@@ -23,7 +23,9 @@ TSharedPtr<SWidget> EpithDraw::DrawSlot(const TInstancedStruct<FEpithWindowEleme
 		return Context.Designer->MakeEmptySlot(MutableSlot, Actions);
 	}
 
+	Context.Designer->BeginSlot(Slot);
 	TSharedPtr<SWidget> ElementWidget = Slot.Get<FEpithWindowElement>().Draw(Context);
+	Context.Designer->EndSlot();
 
 	return Context.Designer->WrapElement(MutableSlot, ElementWidget.IsValid() ? ElementWidget.ToSharedRef() : SNullWidget::NullWidget, Actions);
 }

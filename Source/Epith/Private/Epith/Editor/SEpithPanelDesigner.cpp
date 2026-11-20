@@ -431,22 +431,29 @@ private:
 
 // ------------------------------------------------------------------------------------------------
 
-/** Dragging a slot to another position in its group. */
+/**
+ * Dragging a slot: to another position in its group (dropped among its group's slots), or its element to a "+" button or insert
+ * divider anywhere in the panel (moved into the new slot there).
+ */
 class FEpithSlotDragDrop : public FDecoratedDragDropOp
 {
 public:
 	DRAG_DROP_OPERATOR_TYPE(FEpithSlotDragDrop, FDecoratedDragDropOp)
 
-	/** The slot array the slot is in; it can only be dropped among slots of the same group. */
+	/** The slot array the slot is in, for reordering; null if it isn't in a Vertical or Horizontal Group. */
 	const void* GroupId = nullptr;
 
 	int32 Index = INDEX_NONE;
 
-	static TSharedRef<FEpithSlotDragDrop> New(const void* InGroupId, int32 InIndex, const FText& Label)
+	/** The slot whose element is being dragged, for moving it elsewhere; null for an empty slot. */
+	TInstancedStruct<FEpithWindowElement>* SourceSlot = nullptr;
+
+	static TSharedRef<FEpithSlotDragDrop> New(const void* InGroupId, int32 InIndex, TInstancedStruct<FEpithWindowElement>* InSourceSlot, const FText& Label)
 	{
 		TSharedRef<FEpithSlotDragDrop> Operation = MakeShared<FEpithSlotDragDrop>();
 		Operation->GroupId = InGroupId;
 		Operation->Index = InIndex;
+		Operation->SourceSlot = InSourceSlot;
 		Operation->CurrentHoverText = Label;
 		Operation->CurrentIconBrush = FAppStyle::GetBrush("VerticalBoxDragIndicatorShort");
 		Operation->SetupDefaults();
@@ -465,6 +472,8 @@ public:
 		SLATE_ARGUMENT(FText, Label)
 		/** The group the slot is in (e.g. "Vertical Group"), for the tooltip */
 		SLATE_ARGUMENT(FText, ParentName)
+		/** The slot's element, to move elsewhere; null for an empty slot */
+		SLATE_ARGUMENT(TInstancedStruct<FEpithWindowElement>*, SourceSlot)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs)
@@ -472,6 +481,7 @@ public:
 		GroupId = InArgs._GroupId;
 		Index = InArgs._Index;
 		Label = InArgs._Label;
+		SourceSlot = InArgs._SourceSlot;
 
 		SetCursor(EMouseCursor::GrabHand);
 		SetToolTipText(InArgs._ParentName.IsEmpty()
@@ -505,13 +515,126 @@ public:
 
 	virtual FReply OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
 	{
-		return FReply::Handled().BeginDragDrop(FEpithSlotDragDrop::New(GroupId, Index, Label));
+		return FReply::Handled().BeginDragDrop(FEpithSlotDragDrop::New(GroupId, Index, SourceSlot, Label));
 	}
 
 private:
 	const void* GroupId = nullptr;
 	int32 Index = INDEX_NONE;
 	FText Label;
+	TInstancedStruct<FEpithWindowElement>* SourceSlot = nullptr;
+};
+
+/**
+ * Around a "+" button or insert divider: an element dragged onto it is moved into the new slot it makes. Refused for the element
+ * the button sits inside (a group dropped into itself, or into something inside it), whose slots are the button's Ancestors.
+ */
+class SEpithMoveDropTarget : public SCompoundWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SEpithMoveDropTarget) {}
+		SLATE_ARGUMENT(TArray<const void*>, Ancestors)
+		SLATE_ARGUMENT(TFunction<void(TInstancedStruct<FEpithWindowElement>*)>, OnDropElement)
+		SLATE_DEFAULT_SLOT(FArguments, Content)
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs)
+	{
+		Ancestors = InArgs._Ancestors;
+		OnDropElement = InArgs._OnDropElement;
+
+		ChildSlot
+		[
+			InArgs._Content.Widget
+		];
+	}
+
+	virtual void OnDragEnter(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
+	{
+		TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>();
+
+		if (!Operation.IsValid() || !Operation->SourceSlot)
+		{
+			return;
+		}
+
+		if (CanTake(*Operation))
+		{
+			bDragOver = true;
+			Operation->SetToolTip(FText::Format(LOCTEXT("MoveDrop_Here", "Move {0} here"), Operation->GetDefaultHoverText()), FAppStyle::GetBrush("Graph.ConnectorFeedback.OK"));
+		}
+		else
+		{
+			Operation->SetToolTip(LOCTEXT("MoveDrop_IntoItself", "Can't move an element into itself"), FAppStyle::GetBrush("Graph.ConnectorFeedback.Error"));
+		}
+	}
+
+	virtual void OnDragLeave(const FDragDropEvent& DragDropEvent) override
+	{
+		bDragOver = false;
+
+		if (TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>())
+		{
+			Operation->ResetToDefaultToolTip();
+		}
+	}
+
+	virtual FReply OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
+	{
+		TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>();
+		return Operation.IsValid() && Operation->SourceSlot ? FReply::Handled() : FReply::Unhandled();
+	}
+
+	virtual FReply OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
+	{
+		bDragOver = false;
+
+		TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>();
+
+		if (!Operation.IsValid() || !Operation->SourceSlot)
+		{
+			return FReply::Unhandled();
+		}
+
+		// A refused drop is still handled, so it doesn't fall through to a slot around this button
+		if (CanTake(*Operation) && OnDropElement)
+		{
+			OnDropElement(Operation->SourceSlot);
+		}
+
+		return FReply::Handled();
+	}
+
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
+	{
+		const int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+
+		// The drag ended somewhere else (or was cancelled) without a drag-leave reaching us
+		if (bDragOver && !FSlateApplication::Get().IsDragDropping())
+		{
+			bDragOver = false;
+		}
+
+		if (!bDragOver)
+		{
+			return MaxLayer;
+		}
+
+		// The button lit up in the selection color, so it's clear where the element will land
+		FSlateDrawElement::MakeBox(OutDrawElements, MaxLayer + 1, AllottedGeometry.ToPaintGeometry(), FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None, FStyleColors::Select.GetColor(InWidgetStyle).CopyWithNewOpacity(0.6f));
+
+		return MaxLayer + 1;
+	}
+
+private:
+	bool CanTake(const FEpithSlotDragDrop& Operation) const
+	{
+		return !Ancestors.Contains(Operation.SourceSlot);
+	}
+
+	TArray<const void*> Ancestors;
+	TFunction<void(TInstancedStruct<FEpithWindowElement>*)> OnDropElement;
+	mutable bool bDragOver = false;
 };
 
 /**
@@ -1520,6 +1643,8 @@ EActiveTimerReturnType SEpithPanelDesigner::HandleRedrawTimer(double InCurrentTi
 
 void SEpithPanelDesigner::Redraw()
 {
+	DrawStack.Reset();
+
 	// Let go of the old preview first: its property rows belong to the old PreviewData
 	PreviewArea->SetContent(SNullWidget::NullWidget);
 
@@ -1798,7 +1923,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 			Frame
 		];
 
-	return WithDragHandle(DropTarget, Actions, LOCTEXT("DragLabel_Empty", "Empty Slot"));
+	return WithDragHandle(DropTarget, Actions, LOCTEXT("DragLabel_Empty", "Empty Slot"), nullptr);
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWindowElement>& Slot, TSharedRef<SWidget> ElementWidget, const FEpithSlotActions& Actions)
@@ -1849,7 +1974,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWind
 		}
 	}
 
-	return WithDragHandle(Frame, Actions, DragLabel);
+	return WithDragHandle(Frame, Actions, DragLabel, SlotPtr);
 }
 
 FText SEpithPanelDesigner::DescribeSlot(const TInstancedStruct<FEpithWindowElement>& Slot, const FEpithSlotActions& Actions) const
@@ -1941,11 +2066,43 @@ FReply SEpithPanelDesigner::OnMouseButtonDown(const FGeometry& MyGeometry, const
 	return FReply::Unhandled();
 }
 
-TSharedRef<SWidget> SEpithPanelDesigner::WithDragHandle(TSharedRef<SWidget> Content, const FEpithSlotActions& Actions, const FText& DragLabel)
+TSharedRef<SWidget> SEpithPanelDesigner::WithDragHandle(TSharedRef<SWidget> Content, const FEpithSlotActions& Actions, const FText& DragLabel, TInstancedStruct<FEpithWindowElement>* Slot)
 {
-	if (Actions.Reorder == EEpithSlotReorder::None || !Actions.MoveSlot)
+	const bool bCanReorder = Actions.Reorder != EEpithSlotReorder::None && Actions.MoveSlot;
+
+	// The panel's root element has nowhere to go (everything else is inside it), so it gets no handle
+	UEpithPanelDefinition* PanelDefinition = Definition.Get();
+	const bool bIsRoot = PanelDefinition && Slot == &PanelDefinition->GetRootForEditing();
+	TInstancedStruct<FEpithWindowElement>* SourceSlot = Slot && Slot->IsValid() && !bIsRoot ? Slot : nullptr;
+
+	if (!bCanReorder && !SourceSlot)
 	{
 		return Content;
+	}
+
+	TSharedRef<SWidget> WithHandle = SNew(SHorizontalBox)
+		+ SHorizontalBox::Slot()
+		.AutoWidth()
+		.VAlign(VAlign_Center)
+		.Padding(0, 0, 2, 0)
+		[
+			SNew(SEpithSlotDragHandle)
+			.GroupId(bCanReorder ? Actions.GroupId : nullptr)
+			.Index(Actions.Index)
+			.Label(DragLabel)
+			.ParentName(Actions.ParentName)
+			.SourceSlot(SourceSlot)
+		]
+		+ SHorizontalBox::Slot()
+		.FillWidth(1.0f)
+		[
+			Content
+		];
+
+	// Not in a Vertical or Horizontal Group (a Foldout's or a tab's element): no reordering, only moving to "+" buttons and dividers
+	if (!bCanReorder)
+	{
+		return WithHandle;
 	}
 
 	TFunction<void(int32, int32)> MoveSlot = Actions.MoveSlot;
@@ -1962,27 +2119,55 @@ TSharedRef<SWidget> SEpithPanelDesigner::WithDragHandle(TSharedRef<SWidget> Cont
 			});
 		})
 		[
-			SNew(SHorizontalBox)
-			+ SHorizontalBox::Slot()
-			.AutoWidth()
-			.VAlign(VAlign_Center)
-			.Padding(0, 0, 2, 0)
-			[
-				SNew(SEpithSlotDragHandle)
-				.GroupId(Actions.GroupId)
-				.Index(Actions.Index)
-				.Label(DragLabel)
-				.ParentName(Actions.ParentName)
-			]
-			+ SHorizontalBox::Slot()
-			.FillWidth(1.0f)
-			[
-				Content
-			]
+			WithHandle
 		];
 }
 
-TSharedRef<SWidget> SEpithPanelDesigner::MakeAddButton(const FText& Label, TFunction<void()> AddSlot)
+void SEpithPanelDesigner::BeginSlot(const TInstancedStruct<FEpithWindowElement>& Slot)
+{
+	DrawStack.Push(&Slot);
+}
+
+void SEpithPanelDesigner::EndSlot()
+{
+	if (DrawStack.Num() > 0)
+	{
+		DrawStack.Pop();
+	}
+}
+
+TSharedRef<SWidget> SEpithPanelDesigner::WithMoveDropTarget(TSharedRef<SWidget> Button, FEpithMakeSlot MakeSlot)
+{
+	return SNew(SEpithMoveDropTarget)
+		// The slots this button sits inside, right now while it's being made: an element can't be moved into any of them
+		.Ancestors(DrawStack)
+		.OnDropElement([this, MakeSlot](TInstancedStruct<FEpithWindowElement>* SourceSlot)
+		{
+			// Only a slot drawn in the current layout (the layout may have been redrawn during the drag)
+			if (!SourceSlot || !DrawnSlots.Contains(SourceSlot))
+			{
+				return;
+			}
+
+			Edit(LOCTEXT("MoveElementTransaction", "Move Element"), [SourceSlot, MakeSlot]()
+			{
+				// Taken out of its slot first (which stays, empty), then put in the new one: making the new slot can move other
+				// slots in memory, but by then the source isn't needed any more
+				TInstancedStruct<FEpithWindowElement> Moved = MoveTemp(*SourceSlot);
+				SourceSlot->Reset();
+
+				if (TInstancedStruct<FEpithWindowElement>* Destination = MakeSlot())
+				{
+					*Destination = MoveTemp(Moved);
+				}
+			});
+		})
+		[
+			Button
+		];
+}
+
+TSharedRef<SWidget> SEpithPanelDesigner::MakeAddButton(const FText& Label, FEpithMakeSlot AddSlot)
 {
 	// A 24x24 button with a centered 16x16 "+" icon; the label is the tooltip
 	TSharedRef<SWidget> Button = SNew(SButton)
@@ -1993,7 +2178,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeAddButton(const FText& Label, TFunc
 		.ToolTipText(Label)
 		.OnClicked_Lambda([this, AddSlot]()
 		{
-			Edit(LOCTEXT("AddSlotTransaction", "Add Slot"), AddSlot);
+			Edit(LOCTEXT("AddSlotTransaction", "Add Slot"), [AddSlot]() { AddSlot(); });
 			return FReply::Handled();
 		})
 		[
@@ -2006,12 +2191,14 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeAddButton(const FText& Label, TFunc
 	// Picked up by the group's frame in WrapElement
 	PendingAddButton = Button;
 
-	return SNew(SBox)
+	return WithMoveDropTarget(
+		SNew(SBox)
 		.WidthOverride(24.0f)
 		.HeightOverride(24.0f)
 		[
 			Button
-		];
+		],
+		AddSlot);
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked)
@@ -2433,7 +2620,7 @@ private:
 	bool bMoved = false;
 };
 
-TSharedRef<SWidget> SEpithPanelDesigner::MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, TFunction<void()> InsertSlot)
+TSharedRef<SWidget> SEpithPanelDesigner::MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot)
 {
 	constexpr float ButtonThickness = 3.0f;
 	constexpr float LineThickness = 1.0f;
@@ -2467,7 +2654,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeInsertDivider(bool bRunsHorizontall
 		.ToolTipText(ToolTip)
 		.OnClicked_Lambda([this, InsertSlot]()
 		{
-			Edit(LOCTEXT("InsertSlotTransaction", "Insert Slot"), InsertSlot);
+			Edit(LOCTEXT("InsertSlotTransaction", "Insert Slot"), [InsertSlot]() { InsertSlot(); });
 			return FReply::Handled();
 		})
 		[
@@ -2476,12 +2663,14 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeInsertDivider(bool bRunsHorizontall
 
 	*ButtonHolder = Button;
 
-	return SNew(SBox)
+	return WithMoveDropTarget(
+		SNew(SBox)
 		.WidthOverride(bRunsHorizontally ? FOptionalSize() : FOptionalSize(ButtonThickness))
 		.HeightOverride(bRunsHorizontally ? FOptionalSize(ButtonThickness) : FOptionalSize())
 		[
 			Button
-		];
+		],
+		InsertSlot);
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked)

@@ -59,11 +59,13 @@ public:
 	// IEpithDesigner
 	TSharedRef<SWidget> MakeEmptySlot(TInstancedStruct<FEpithWindowElement>& Slot, const FEpithSlotActions& Actions) override;
 	TSharedRef<SWidget> WrapElement(TInstancedStruct<FEpithWindowElement>& Slot, TSharedRef<SWidget> ElementWidget, const FEpithSlotActions& Actions) override;
-	TSharedRef<SWidget> MakeAddButton(const FText& Label, TFunction<void()> AddSlot) override;
+	TSharedRef<SWidget> MakeAddButton(const FText& Label, FEpithMakeSlot AddSlot) override;
 	TSharedRef<SWidget> MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked) override;
 	TSharedRef<SWidget> MakeColumnHandles(const TSharedRef<FEpithColumnLayout>& Columns) override;
 	TSharedRef<SWidget> MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked) override;
-	TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, TFunction<void()> InsertSlot) override;
+	TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot) override;
+	void BeginSlot(const TInstancedStruct<FEpithWindowElement>& Slot) override;
+	void EndSlot() override;
 
 	/** Any Blueprint finished compiling: redraw, relisting the Properties pane's list. */
 	void OnBlueprintCompiled();
@@ -92,7 +94,14 @@ protected:
 	TSharedRef<SWidget> MakeElementMenu(TInstancedStruct<FEpithWindowElement>* Slot, const FEpithSlotActions& Actions);
 
 	/** Puts a grab handle to the left of Content and makes it a drop target, if the slot's group can be reordered by dragging. */
-	TSharedRef<SWidget> WithDragHandle(TSharedRef<SWidget> Content, const FEpithSlotActions& Actions, const FText& DragLabel);
+	/**
+	 * Adds the grab handle. Slot: the element it drags to a "+" button or insert divider anywhere in the panel (null for an empty
+	 * slot, which can only be reordered in its group).
+	 */
+	TSharedRef<SWidget> WithDragHandle(TSharedRef<SWidget> Content, const FEpithSlotActions& Actions, const FText& DragLabel, TInstancedStruct<FEpithWindowElement>* Slot);
+
+	/** Wraps a "+" button or insert divider so an element dragged onto it moves into the slot MakeSlot makes. */
+	TSharedRef<SWidget> WithMoveDropTarget(TSharedRef<SWidget> Button, FEpithMakeSlot MakeSlot);
 
 	/** Menu for an empty slot: pick an element type. Spacers are only offered in Vertical and Horizontal Group slots. */
 	TSharedRef<SWidget> MakeElementTypeMenu(TInstancedStruct<FEpithWindowElement>* Slot, bool bAllowSpacer);
@@ -172,6 +181,9 @@ protected:
 
 	/** True while it's sliding (AnimateRealView is running). */
 	bool bRealViewSliding = false;
+
+	/** The slots being drawn right now, outermost first (BeginSlot / EndSlot): what a widget made now sits inside. */
+	TArray<const void*> DrawStack;
 
 	/** Written by the hovered frame each frame it's painted; read by the label under the panel. */
 	TSharedRef<FEpithDesignerHoverNote> HoverNote = MakeShared<FEpithDesignerHoverNote>();

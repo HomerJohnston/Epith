@@ -156,8 +156,15 @@ bool UEpithEditorWorldExtension::TryShowPanel(UObject* Target, TSharedPtr<IAsset
 		return false;
 	}
 
-	// Only one panel at a time. Closing first also lets the new panel open where the old one was (LastPanelLocation).
-	SEpithViewportMasterPane::CloseAll();
+	// Only one unpinned panel at a time; pinned panels stay open alongside the new one. Closing first also lets the new panel
+	// open where the old one was (LastPanelLocation).
+	SEpithViewportMasterPane::CloseAllUnpinned();
+
+	// The target still has a (pinned) panel open: that one is its panel, so don't open a second
+	if (SEpithViewportMasterPane::IsOpenFor(Target))
+	{
+		return true;
+	}
 
 	TSharedRef<SConstraintCanvas> Canvas = SNew(SConstraintCanvas);
 

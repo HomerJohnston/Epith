@@ -55,6 +55,9 @@ class SEpithViewportMasterPane : public SCompoundWidget
 	/** Closes every open Epith panel (e.g. when Play-in-Editor starts). */
 	static void CloseAll();
 
+	/** Closes every open Epith panel that isn't pinned (when another panel opens: pinned panels stay alongside it). */
+	static void CloseAllUnpinned();
+
 	/** True if a panel is open for this object. */
 	static bool IsOpenFor(const UObject* Object);
 
@@ -79,7 +82,8 @@ class SEpithViewportMasterPane : public SCompoundWidget
 
 	/**
 	 * An unpinned panel closes as soon as the selection changes so that its target is no longer the one selected actor
-	 * (another actor is clicked, the target is deselected, more actors are shift-selected). A pinned panel stays open.
+	 * (another actor is clicked, the target is deselected, more actors are shift-selected), or when another panel opens.
+	 * A pinned panel stays open through both.
 	 */
 	bool IsPinned() const { return bPinned; }
 

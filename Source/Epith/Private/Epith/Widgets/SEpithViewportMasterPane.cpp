@@ -25,6 +25,27 @@ void SEpithViewportMasterPane::Construct(const FArguments& InArgs)
 	Target = InArgs._Target;
 	CurrentPanelLocation = LastPanelLocation.Get(InArgs._StartLocation);
 
+	// A pinned panel may still be sitting where the last panel was: step down and right until this one doesn't open exactly
+	// on top of another in the same viewport
+	static const FVector2D CascadeStep(32.0, 32.0);
+	static constexpr int32 MaxCascadeSteps = 20;
+
+	for (int32 Step = 0; Step < MaxCascadeSteps; ++Step)
+	{
+		const bool bCovered = OpenPanes.ContainsByPredicate([this](const TWeakPtr<SEpithViewportMasterPane>& Pane)
+		{
+			TSharedPtr<SEpithViewportMasterPane> Other = Pane.Pin();
+			return Other.IsValid() && !Other->bClosed && Other->Viewport == Viewport && FVector2D::Distance(Other->CurrentPanelLocation, CurrentPanelLocation) < 8.0;
+		});
+
+		if (!bCovered)
+		{
+			break;
+		}
+
+		CurrentPanelLocation += CascadeStep;
+	}
+
 	check(Canvas.IsValid());
 
 	PaneBox = SNew(SVerticalBox);
@@ -277,6 +298,27 @@ void SEpithViewportMasterPane::CloseAll()
 	for (const TWeakPtr<SEpithViewportMasterPane>& Pane : OpenPanes)
 	{
 		if (TSharedPtr<SEpithViewportMasterPane> Pinned = Pane.Pin())
+		{
+			PanesToClose.Add(Pinned);
+		}
+	}
+
+	for (const TSharedPtr<SEpithViewportMasterPane>& Pane : PanesToClose)
+	{
+		Pane->Close();
+	}
+}
+
+void SEpithViewportMasterPane::CloseAllUnpinned()
+{
+	// Copy first; closing destroys panes, which removes them from OpenPanes
+	TArray<TSharedPtr<SEpithViewportMasterPane>> PanesToClose;
+
+	for (const TWeakPtr<SEpithViewportMasterPane>& Pane : OpenPanes)
+	{
+		TSharedPtr<SEpithViewportMasterPane> Pinned = Pane.Pin();
+
+		if (Pinned.IsValid() && !Pinned->bPinned)
 		{
 			PanesToClose.Add(Pinned);
 		}

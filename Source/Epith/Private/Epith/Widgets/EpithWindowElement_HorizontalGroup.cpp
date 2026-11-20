@@ -75,7 +75,7 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 			[
 				Context.Designer->MakeInsertDivider(false, LOCTEXT("HorizontalGroup_Insert", "Insert Slot into Horizontal Group"), [SlotsPtr = &MutableSlots, i]()
 				{
-					SlotsPtr->InsertDefaulted(i);
+					return &SlotsPtr->InsertDefaulted_GetRef(i).Child;
 				})
 			];
 		}
@@ -105,7 +105,7 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 		[
 			Context.Designer->MakeAddButton(LOCTEXT("HorizontalGroup_Add", "Add Slot to Horizontal Group"), [SlotsPtr = &MutableSlots]()
 			{
-				SlotsPtr->AddDefaulted();
+				return &SlotsPtr->AddDefaulted_GetRef().Child;
 			})
 		];
 	}
