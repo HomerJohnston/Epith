@@ -35,9 +35,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Epith|Appearance")
 	FText Title;
 
-	/** Minimum width of this object's section of the panel, in Slate units. */
-	UPROPERTY(EditDefaultsOnly, Category = "Epith|Appearance", meta = (ClampMin = 0, UIMin = 100, UIMax = 600))
-	float MinWidth = 180;
+	/**
+	 * Width of this object's section of the panel, in Slate units. Everything inside fits this width: property columns and
+	 * Horizontal Group slots are fractions of it. (If sections of one panel differ, the panel is as wide as the widest.)
+	 */
+	UPROPERTY(EditDefaultsOnly, Category = "Epith|Appearance", meta = (ClampMin = 100, ClampMax = 2000, UIMin = 200, UIMax = 800))
+	float Width = 360;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Epith", meta = (ShowOnlyInnerProperties, ExcludeBaseStruct))
 	TInstancedStruct<FEpithWindowElement> Root;
@@ -63,9 +66,18 @@ public:
 		return Title;
 	}
 
-	float GetMinWidth() const
+	static constexpr float MinPanelWidth = 100.0f;
+	static constexpr float MaxPanelWidth = 2000.0f;
+
+	float GetWidth() const
 	{
-		return MinWidth;
+		return FMath::Clamp(Width, MinPanelWidth, MaxPanelWidth);
+	}
+
+	/** For the panel designer (wrap in a transaction and call Modify() first). */
+	void SetWidth(float InWidth)
+	{
+		Width = FMath::Clamp(InWidth, MinPanelWidth, MaxPanelWidth);
 	}
 
 	const TInstancedStruct<FEpithWindowElement>* GetRoot() const

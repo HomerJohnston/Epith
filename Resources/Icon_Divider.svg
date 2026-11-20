@@ -1,0 +1,6 @@
+<svg width="16" height="16" viewBox="0 0 16 16" fill="none" xmlns="http://www.w3.org/2000/svg">
+<!-- A solid bar across the middle, between two faint slots above and below it. -->
+<rect x="2" y="1" width="12" height="4" fill="white" fill-opacity="0.4"/>
+<rect x="0" y="7" width="16" height="2" fill="white"/>
+<rect x="2" y="11" width="12" height="4" fill="white" fill-opacity="0.4"/>
+</svg>

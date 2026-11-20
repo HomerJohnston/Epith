@@ -73,6 +73,25 @@ class FEpithColumnLayout;
 /** Makes a new slot in a group (at its end, or at a position) and returns where its element goes. */
 using FEpithMakeSlot = TFunction<TInstancedStruct<FEpithWindowElement>*()>;
 
+/** Dragging an insert divider sideways to move the boundary between the two slots either side of it (Horizontal Group). */
+struct FEpithDividerResize
+{
+	/** Whether the slots either side can be resized; unset = they can't, and the divider only inserts. */
+	TFunction<bool()> CanResize;
+
+	/** The drag began. */
+	TFunction<void()> Begin;
+
+	/** The cursor is Delta from where the drag began, in the group's units (already slowed by the designer's drag speed). */
+	TFunction<void(float Delta)> Update;
+
+	/** The drag ended: save the new sizes. Runs inside the designer's transaction. */
+	TFunction<void()> Commit;
+
+	/** The drag was cancelled: drop the live sizes. */
+	TFunction<void()> Cancel;
+};
+
 class IEpithDesigner
 {
 public:
@@ -100,14 +119,15 @@ public:
 	/**
 	 * A thin divider between two slots that inserts a new slot there when clicked: a 1px line inside a 3px button.
 	 * bRunsHorizontally: a horizontal line (between slots stacked vertically); otherwise a vertical line (between slots in a row).
-	 * An element dragged onto it moves into the new slot InsertSlot makes.
+	 * An element dragged onto it moves into the new slot InsertSlot makes. With Resize set (a vertical line), dragging it
+	 * sideways resizes the slots either side instead.
 	 */
-	virtual TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot) = 0;
+	virtual TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot, const FEpithDividerResize& Resize = FEpithDividerResize()) = 0;
 
 	/** A "Pick control..." dropdown listing every special control type (subclasses of FEpithSpecialControl). */
 	virtual TSharedRef<SWidget> MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked) = 0;
 
-	/** Drag handles over a property row's column lines, which resize the group's columns. Laid over the row's preview. */
+	/** A drag handle over a property row's name/value line, which sets the group's name column width. Laid over the row's preview. */
 	virtual TSharedRef<SWidget> MakeColumnHandles(const TSharedRef<FEpithColumnLayout>& Columns) = 0;
 };
 
@@ -118,27 +138,39 @@ public:
 class FEpithColumnLayout
 {
 public:
-	/** Row geometry shared by the rows and the designer's column handles: | Name | Value | Reset |, with 1px lines between. */
+	/** Row geometry shared by the rows and the designer's column handle: | Name | Value | Reset |, with 1px lines between. */
 	static constexpr float LineWidth = 1.0f;
 	static constexpr float ResetColumnWidth = 24.0f;
 
-	/** @param InSourceSettings The group's saved settings these widths came from; the designer's column handles write to them. */
-	EPITH_API explicit FEpithColumnLayout(float InFixedNameWidth = 0.0f, float InFixedValueWidth = 0.0f, const FEpithColumnSettings* InSourceSettings = nullptr);
+	/** The value column never gets narrower than this when the name column is widened. */
+	static constexpr float MinValueWidth = 16.0f;
 
-	/** Live width changes while a designer column handle is dragged (saved to the settings when the drag ends). 0 = automatic. */
-	void SetFixedNameWidth(float Width) { FixedNameWidth = Width; }
-	void SetFixedValueWidth(float Width) { FixedValueWidth = Width; }
+	/** The name column's share of the row is kept within these (0 = automatic, outside them). */
+	static constexpr float MinNameFraction = 0.05f;
+	static constexpr float MaxNameFraction = 0.95f;
+
+	/** @param InSourceSettings The group's saved settings these widths came from; the designer's column handle writes to them. */
+	EPITH_API explicit FEpithColumnLayout(float InNameFraction = 0.0f, const FEpithColumnSettings* InSourceSettings = nullptr);
+
+	/** Live changes while the designer's column handle is dragged (saved to the settings when the drag ends). 0 = automatic. */
+	EPITH_API void SetNameFraction(float Fraction);
+
+	/** The name column's share of the row (0 = as wide as the widest name). */
+	float GetNameFraction() const { return NameFraction; }
 
 	const FEpithColumnSettings* GetSourceSettings() const { return SourceSettings; }
 
 	/** Rows add their name area (indent, expander, edit-condition toggle, name) so the automatic width can fit the widest one. */
 	EPITH_API void RegisterNameArea(const TSharedRef<SWidget>& NameArea);
 
-	/** The fixed name width if one is set, otherwise the widest visible name area in the group (unset before anything has been measured). */
-	EPITH_API FOptionalSize GetNameWidth() const;
+	/**
+	 * How wide the name column is in a row RowWidth wide: its share of the row, or the widest visible name area in the group if
+	 * automatic. Always leaves room for the value and reset columns. Unset if automatic and nothing has been measured yet.
+	 */
+	EPITH_API TOptional<float> GetNameWidth(float RowWidth) const;
 
-	/** The fixed value width if one is set, otherwise unset (each value takes what it needs). */
-	EPITH_API FOptionalSize GetValueWidth() const;
+	/** The widest visible name area in the group (unset before anything has been measured). */
+	EPITH_API TOptional<float> GetAutomaticNameWidth() const;
 
 	/**
 	 * Call right after building new rows (a panel, or a row's expanded children). Measures the new widgets now, so the automatic
@@ -149,8 +181,7 @@ public:
 	EPITH_API static void MeasureNow(const TSharedRef<SWidget>& NewContent);
 
 private:
-	float FixedNameWidth = 0.0f;
-	float FixedValueWidth = 0.0f;
+	float NameFraction = 0.0f;
 
 	const FEpithColumnSettings* SourceSettings = nullptr;
 
@@ -220,18 +251,18 @@ struct FEpithDrawContext
 	/** Tabs and foldouts to restore after a redraw. Null = everything starts in its default state. */
 	TSharedPtr<FEpithViewState> ViewState;
 
-	/** The layout of the group this element is directly in (e.g. so a Spacer knows which way to be a gap). */
+	/** The layout of the group this element is directly in (e.g. so a Divider knows which way to be a gap). */
 	EEpithGroupAxis ParentAxis = EEpithGroupAxis::None;
 
 	/**
-	 * How far past each of its edges this element's filled Spacer bars should reach, to join the bar of a filled Spacer in a
+	 * How far past each of its edges this element's filled Divider bars should reach, to join the bar of a filled Divider in a
 	 * neighbouring group (making T and + shapes). 0 on a side = no bar to join there.
 	 *
-	 * Set by Vertical and Horizontal Groups, one level deep: a group next to a filled spacer gets the distance to its bar, and
-	 * passes it (plus its own border and slot padding) on to its children across its own direction. Only spacers use it.
+	 * Set by Vertical and Horizontal Groups, one level deep: a group next to a filled divider gets the distance to its bar, and
+	 * passes it (plus its own border and slot padding) on to its children across its own direction. Only dividers use it.
 	 * Cleared by WithColumns, so it never reaches further down. Always 0 in the designer, whose chrome sits between slots.
 	 */
-	FMargin SpacerReach = FMargin(0.0f);
+	FMargin DividerReach = FMargin(0.0f);
 
 	/**
 	 * Top and bottom grid lines for a property row drawn in this slot. A row on its own (at the root, directly in a Foldout or a
@@ -261,8 +292,8 @@ namespace EpithDraw
 	 */
 	EPITH_API TSharedPtr<SWidget> DrawSlot(const TInstancedStruct<FEpithWindowElement>& Slot, const FEpithDrawContext& Context, const FEpithSlotActions& Actions = FEpithSlotActions());
 
-	/** True if the slot holds a Spacer that draws its bar (bFilled), i.e. one that neighbouring spacers can join. */
-	EPITH_API bool IsFilledSpacer(const TInstancedStruct<FEpithWindowElement>& Slot);
+	/** True if the slot holds a Divider that draws its bar (bFilled), i.e. one that neighbouring dividers can join. */
+	EPITH_API bool IsFilledDivider(const TInstancedStruct<FEpithWindowElement>& Slot);
 
 	/** Remove / move up / move down for entry Index of a group's slot array. */
 	template<typename SlotType>

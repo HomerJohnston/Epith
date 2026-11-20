@@ -63,7 +63,7 @@ public:
 	TSharedRef<SWidget> MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked) override;
 	TSharedRef<SWidget> MakeColumnHandles(const TSharedRef<FEpithColumnLayout>& Columns) override;
 	TSharedRef<SWidget> MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked) override;
-	TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot) override;
+	TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot, const FEpithDividerResize& Resize) override;
 	void BeginSlot(const TInstancedStruct<FEpithWindowElement>& Slot) override;
 	void EndSlot() override;
 
@@ -103,8 +103,8 @@ protected:
 	/** Wraps a "+" button or insert divider so an element dragged onto it moves into the slot MakeSlot makes. */
 	TSharedRef<SWidget> WithMoveDropTarget(TSharedRef<SWidget> Button, FEpithMakeSlot MakeSlot);
 
-	/** Menu for an empty slot: pick an element type. Spacers are only offered in Vertical and Horizontal Group slots. */
-	TSharedRef<SWidget> MakeElementTypeMenu(TInstancedStruct<FEpithWindowElement>* Slot, bool bAllowSpacer);
+	/** Menu for an empty slot: pick an element type. Dividers are only offered in Vertical and Horizontal Group slots. */
+	TSharedRef<SWidget> MakeElementTypeMenu(TInstancedStruct<FEpithWindowElement>* Slot, bool bAllowDivider);
 
 	/** Selects a slot (or nothing) and shows it in the ELEMENT section. */
 	void Select(TInstancedStruct<FEpithWindowElement>* Slot);
@@ -181,6 +181,14 @@ protected:
 
 	/** True while it's sliding (AnimateRealView is running). */
 	bool bRealViewSliding = false;
+
+	/** The preview's right edge, dragged to change the panel's Width. */
+	TSharedRef<SWidget> MakePanelWidthGrip();
+
+	/** While the preview's right edge is dragged: the width it's being dragged to (saved when the drag ends). */
+	TOptional<float> LivePanelWidth;
+
+	float PanelWidthAtDragStart = 0.0f;
 
 	/** The slots being drawn right now, outermost first (BeginSlot / EndSlot): what a widget made now sits inside. */
 	TArray<const void*> DrawStack;

@@ -15,6 +15,7 @@
 #include "Widgets/SBoxPanel.h"
 #include "Widgets/SLeafWidget.h"
 #include "Widgets/SNullWidget.h"
+#include "Widgets/SPanel.h"
 #include "Widgets/Images/SImage.h"
 #include "Widgets/Input/SButton.h"
 #include "Widgets/Input/SCheckBox.h"
@@ -65,6 +66,69 @@ namespace EpithPropertyRow
 	}
 
 	/** One strip per nesting level in that level's color, with the array drop shadow, like SDetailRowIndent. */
+	/**
+	 * A row split in two: the name column on the left, as wide as the group's column layout says for a row this wide (a share
+	 * of the row, or the widest name), and the rest of the row (value, reset) on the right. Without a layout, the left side
+	 * takes the width it needs.
+	 */
+	class SEpithColumnSplit : public SPanel
+	{
+	public:
+		SLATE_BEGIN_ARGS(SEpithColumnSplit) {}
+			SLATE_ARGUMENT(TSharedPtr<FEpithColumnLayout>, Columns)
+			SLATE_NAMED_SLOT(FArguments, Left)
+			SLATE_NAMED_SLOT(FArguments, Right)
+		SLATE_END_ARGS()
+
+		SEpithColumnSplit()
+			: Children(this)
+		{
+		}
+
+		void Construct(const FArguments& InArgs)
+		{
+			Columns = InArgs._Columns;
+			Children.Add(InArgs._Left.Widget);
+			Children.Add(InArgs._Right.Widget);
+		}
+
+		virtual void OnArrangeChildren(const FGeometry& AllottedGeometry, FArrangedChildren& ArrangedChildren) const override
+		{
+			const FVector2f Size = AllottedGeometry.GetLocalSize();
+			const float LeftWidth = FMath::Clamp(GetLeftWidth(Size.X), 0.0f, Size.X);
+
+			ArrangedChildren.AddWidget(AllottedGeometry.MakeChild(ConstCastSharedRef<SWidget>(Children.GetChildAt(0)), FVector2f::ZeroVector, FVector2f(LeftWidth, Size.Y)));
+			ArrangedChildren.AddWidget(AllottedGeometry.MakeChild(ConstCastSharedRef<SWidget>(Children.GetChildAt(1)), FVector2f(LeftWidth, 0.0f), FVector2f(Size.X - LeftWidth, Size.Y)));
+		}
+
+		virtual FVector2D ComputeDesiredSize(float) const override
+		{
+			const FVector2D LeftSize = Children.GetChildAt(0)->GetDesiredSize();
+			const FVector2D RightSize = Children.GetChildAt(1)->GetDesiredSize();
+
+			// A share of the row has no width of its own until the row is laid out: the widths the two sides need, as a guess.
+			// Rows normally fill the panel's fixed width anyway.
+			const TOptional<float> AutomaticWidth = Columns.IsValid() && Columns->GetNameFraction() <= 0.0f ? Columns->GetAutomaticNameWidth() : TOptional<float>();
+
+			return FVector2D(AutomaticWidth.Get(LeftSize.X) + RightSize.X, FMath::Max(LeftSize.Y, RightSize.Y));
+		}
+
+		virtual FChildren* GetChildren() override
+		{
+			return &Children;
+		}
+
+	private:
+		float GetLeftWidth(float RowWidth) const
+		{
+			const TOptional<float> Width = Columns.IsValid() ? Columns->GetNameWidth(RowWidth) : TOptional<float>();
+			return Width.IsSet() ? Width.GetValue() : static_cast<float>(Children.GetChildAt(0)->GetDesiredSize().X);
+		}
+
+		TSharedPtr<FEpithColumnLayout> Columns;
+		TSlotlessChildren<SWidget> Children;
+	};
+
 	class SEpithRowIndent : public SLeafWidget
 	{
 	public:
@@ -748,7 +812,7 @@ namespace EpithPropertyRow
 
 		// | Name | Value | Reset |, laid out like a Details panel row: 1px lines between the columns, and the row background
 		// covers all but the bottom pixel of a grid-line colored border, which shows through as the line under the row.
-		TSharedRef<SHorizontalBox> RowBox = SNew(SHorizontalBox);
+		// The name column's width comes from the group (a share of the row, or the widest name); the value column fills the rest.
 		const bool bAligned = Columns.IsValid() && ValueWidget.IsValid();
 
 		if (bAligned)
@@ -756,66 +820,34 @@ namespace EpithPropertyRow
 			Columns->RegisterNameArea(NameArea);
 		}
 
-		// Name
-		RowBox->AddSlot()
-		.AutoWidth()
-		.VAlign(VAlign_Fill)
-		[
-			SNew(SBox)
-			.Clipping(EWidgetClipping::ClipToBounds)
-			.WidthOverride_Lambda([Columns, bAligned]()
-			{
-				return bAligned ? Columns->GetNameWidth() : FOptionalSize();
-			})
-			[
-				NameArea
-			]
-		];
+		// Value, then reset
+		TSharedRef<SHorizontalBox> RestOfRow = SNew(SHorizontalBox);
 
 		if (ValueWidget.IsValid())
 		{
-			RowBox->AddSlot()
+			RestOfRow->AddSlot()
 			.AutoWidth()
 			[
 				MakeColumnLine()
 			];
 
-			// Value: fills the row (so the reset column lines up at the right edge), unless the group fixes its width
-			const bool bFixedValueWidth = bAligned && Columns->GetValueWidth().IsSet();
-
-			TSharedRef<SWidget> ValueCell = SNew(SBox)
-				.WidthOverride_Lambda([Columns, bAligned]()
-				{
-					return bAligned ? Columns->GetValueWidth() : FOptionalSize();
-				})
+			RestOfRow->AddSlot()
+			.FillWidth(1.0f)
+			[
+				SNew(SBox)
 				.HAlign(HAlign_Fill)
 				.VAlign(VAlign_Center)
 				.Padding(FMargin(12, RowVerticalPadding, 4, RowVerticalPadding))
+				.Clipping(EWidgetClipping::ClipToBounds)
 				[
 					ValueWidget.ToSharedRef()
-				];
-
-			if (bFixedValueWidth)
-			{
-				RowBox->AddSlot()
-				.AutoWidth()
-				[
-					ValueCell
-				];
-			}
-			else
-			{
-				RowBox->AddSlot()
-				.FillWidth(1.0f)
-				[
-					ValueCell
-				];
-			}
+				]
+			];
 		}
 		else
 		{
 			// Whole-row widgets span the name and value columns
-			RowBox->AddSlot()
+			RestOfRow->AddSlot()
 			.FillWidth(1.0f)
 			[
 				SNullWidget::NullWidget
@@ -823,7 +855,7 @@ namespace EpithPropertyRow
 		}
 
 		// Reset to default; always there (even if empty) so the column stays aligned
-		RowBox->AddSlot()
+		RestOfRow->AddSlot()
 		.AutoWidth()
 		[
 			MakeColumnLine()
@@ -831,7 +863,7 @@ namespace EpithPropertyRow
 
 		const bool bHasResetButton = Handle.IsValid() && Handle->IsValidHandle() && Handle->GetProperty();
 
-		RowBox->AddSlot()
+		RestOfRow->AddSlot()
 		.AutoWidth()
 		[
 			SNew(SBorder)
@@ -852,6 +884,21 @@ namespace EpithPropertyRow
 				]
 			]
 		];
+
+		TSharedRef<SWidget> RowBox = SNew(SEpithColumnSplit)
+			.Columns(bAligned ? Columns : nullptr)
+			.Left()
+			[
+				SNew(SBox)
+				.Clipping(EWidgetClipping::ClipToBounds)
+				[
+					NameArea
+				]
+			]
+			.Right()
+			[
+				RestOfRow
+			];
 
 		// The grid-line color shows through a 1 px gap along the top and/or bottom
 		TSharedRef<SBorder> RowLine = SNew(SBorder)

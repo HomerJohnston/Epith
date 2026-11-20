@@ -248,6 +248,8 @@ void FEpithStyle::SetupStyles()
 	StyleInstance->Set("Epith.ElementIcon.TabbedGroup",		new IMAGE_BRUSH_SVG("Icon_TabbedGroup",					CoreStyleConstants::Icon16x16));
 	StyleInstance->Set("Epith.ElementIcon.Property",		new CORE_IMAGE_BRUSH_SVG("UMG/SinglePropertyView",	CoreStyleConstants::Icon16x16));
 	StyleInstance->Set("Epith.ElementIcon.SpecialControl",	new CORE_IMAGE_BRUSH_SVG("UMG/Button",				CoreStyleConstants::Icon16x16));
+	// Epith's own: a bar between two faint slots
+	StyleInstance->Set("Epith.ElementIcon.Divider",			new IMAGE_BRUSH_SVG("Icon_Divider",						CoreStyleConstants::Icon16x16));
 	StyleInstance->Set("Epith.ElementIcon.Spacer",			new CORE_IMAGE_BRUSH_SVG("UMG/Spacer",				CoreStyleConstants::Icon16x16));
 
 	// ============================================================================================

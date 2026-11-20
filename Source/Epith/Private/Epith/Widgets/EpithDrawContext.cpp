@@ -1,6 +1,6 @@
 ﻿#include "Epith/Widgets/EpithDrawContext.h"
 
-#include "Epith/Widgets/EpithWindowElement_Spacer.h"
+#include "Epith/Widgets/EpithWindowElement_Divider.h"
 
 #include "CoreGlobals.h"
 #include "Epith/Widgets/EpithWindowElement.h"
@@ -34,11 +34,16 @@ TSharedPtr<SWidget> EpithDraw::DrawSlot(const TInstancedStruct<FEpithWindowEleme
 
 uint64 FEpithColumnLayout::Generation = 0;
 
-FEpithColumnLayout::FEpithColumnLayout(float InFixedNameWidth, float InFixedValueWidth, const FEpithColumnSettings* InSourceSettings)
-	: FixedNameWidth(InFixedNameWidth)
-	, FixedValueWidth(InFixedValueWidth)
-	, SourceSettings(InSourceSettings)
+FEpithColumnLayout::FEpithColumnLayout(float InNameFraction, const FEpithColumnSettings* InSourceSettings)
+	: SourceSettings(InSourceSettings)
 {
+	SetNameFraction(InNameFraction);
+}
+
+void FEpithColumnLayout::SetNameFraction(float Fraction)
+{
+	// Anything saved outside 0..1 (by hand, or an old asset) is brought back into range; 0 stays automatic
+	NameFraction = Fraction > 0.0f ? FMath::Clamp(Fraction, MinNameFraction, MaxNameFraction) : 0.0f;
 }
 
 void FEpithColumnLayout::RegisterNameArea(const TSharedRef<SWidget>& NameArea)
@@ -46,13 +51,23 @@ void FEpithColumnLayout::RegisterNameArea(const TSharedRef<SWidget>& NameArea)
 	NameAreas.Add(NameArea);
 }
 
-FOptionalSize FEpithColumnLayout::GetNameWidth() const
+TOptional<float> FEpithColumnLayout::GetNameWidth(float RowWidth) const
 {
-	if (FixedNameWidth > 0.0f)
+	const TOptional<float> Width = NameFraction > 0.0f ? TOptional<float>(FMath::RoundToFloat(RowWidth * NameFraction)) : GetAutomaticNameWidth();
+
+	if (!Width.IsSet())
 	{
-		return FixedNameWidth;
+		return Width;
 	}
 
+	// The value column (at its narrowest), the reset column and the lines between them always fit
+	const float MaxWidth = FMath::Max(0.0f, RowWidth - (LineWidth * 2.0f + MinValueWidth + ResetColumnWidth));
+
+	return FMath::Clamp(Width.GetValue(), 0.0f, MaxWidth);
+}
+
+TOptional<float> FEpithColumnLayout::GetAutomaticNameWidth() const
+{
 	if (CachedFrame != GFrameCounter || CachedGeneration != Generation)
 	{
 		CachedFrame = GFrameCounter;
@@ -88,7 +103,7 @@ FOptionalSize FEpithColumnLayout::GetNameWidth() const
 		}
 	}
 
-	return CachedNameWidth > 0.0f ? FOptionalSize(CachedNameWidth) : FOptionalSize();
+	return CachedNameWidth > 0.0f ? TOptional<float>(CachedNameWidth) : TOptional<float>();
 }
 
 void FEpithColumnLayout::MeasureNow(const TSharedRef<SWidget>& NewContent)
@@ -99,23 +114,18 @@ void FEpithColumnLayout::MeasureNow(const TSharedRef<SWidget>& NewContent)
 	++Generation;
 }
 
-FOptionalSize FEpithColumnLayout::GetValueWidth() const
-{
-	return FixedValueWidth > 0.0f ? FOptionalSize(FixedValueWidth) : FOptionalSize();
-}
-
 FEpithDrawContext FEpithDrawContext::WithColumns(const FEpithColumnSettings& Settings, EEpithGroupAxis ChildAxis) const
 {
 	FEpithDrawContext ChildContext = *this;
 	ChildContext.ParentAxis = ChildAxis;
-	ChildContext.SpacerReach = FMargin(0.0f);
+	ChildContext.DividerReach = FMargin(0.0f);
 	ChildContext.RowEdges = FEpithRowEdges::Standalone();
-	ChildContext.Columns = MakeShared<FEpithColumnLayout>(Settings.NameColumnWidth, Settings.ValueColumnWidth, &Settings);
+	ChildContext.Columns = MakeShared<FEpithColumnLayout>(Settings.NameColumnFraction, &Settings);
 	return ChildContext;
 }
 
-bool EpithDraw::IsFilledSpacer(const TInstancedStruct<FEpithWindowElement>& Slot)
+bool EpithDraw::IsFilledDivider(const TInstancedStruct<FEpithWindowElement>& Slot)
 {
-	const FEpithWindowElement_Spacer* Spacer = Slot.GetPtr<FEpithWindowElement_Spacer>();
-	return Spacer && Spacer->bFilled;
+	const FEpithWindowElement_Divider* Divider = Slot.GetPtr<FEpithWindowElement_Divider>();
+	return Divider && Divider->bFilled;
 }

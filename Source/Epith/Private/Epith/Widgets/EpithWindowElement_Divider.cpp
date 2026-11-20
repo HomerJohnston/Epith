@@ -1,4 +1,4 @@
-﻿#include "Epith/Widgets/EpithWindowElement_Spacer.h"
+﻿#include "Epith/Widgets/EpithWindowElement_Divider.h"
 
 #include "Epith/Widgets/EpithDrawContext.h"
 #include "Widgets/Text/STextBlock.h"
@@ -11,10 +11,10 @@
 
 #define LOCTEXT_NAMESPACE "Epith"
 
-namespace EpithSpacer
+namespace EpithDivider
 {
 	/**
-	 * A filled spacer's bar. Paints past its own ends by Reach to meet a neighbouring group's spacer bar. It only paints further;
+	 * A filled divider's bar. Paints past its own ends by Reach to meet a neighbouring group's divider bar. It only paints further;
 	 * its size, and so the layout, stay the same.
 	 */
 	class SBar : public SLeafWidget
@@ -31,7 +31,7 @@ namespace EpithSpacer
 
 		virtual FVector2D ComputeDesiredSize(float) const override
 		{
-			return FVector2D(FEpithWindowElement_Spacer::Size, FEpithWindowElement_Spacer::Size);
+			return FVector2D(FEpithWindowElement_Divider::Size, FEpithWindowElement_Divider::Size);
 		}
 
 		virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
@@ -58,18 +58,18 @@ namespace EpithSpacer
 	};
 }
 
-TSharedPtr<SWidget> FEpithWindowElement_Spacer::Draw(const FEpithDrawContext& Context) const
+TSharedPtr<SWidget> FEpithWindowElement_Divider::Draw(const FEpithDrawContext& Context) const
 {
 	const bool bVertical = Context.ParentAxis == EEpithGroupAxis::Vertical;
 	const bool bHorizontal = Context.ParentAxis == EEpithGroupAxis::Horizontal;
 
-	// A spacer only means something between the slots of a Vertical or Horizontal Group
+	// A divider only means something between the slots of a Vertical or Horizontal Group
 	if (!bVertical && !bHorizontal)
 	{
 		if (Context.IsDesigning())
 		{
 			return SNew(STextBlock)
-				.Text(LOCTEXT("Spacer_WrongParent", "A Spacer only works in a Vertical or Horizontal Group."))
+				.Text(LOCTEXT("Divider_WrongParent", "A Divider only works in a Vertical or Horizontal Group."))
 				.ColorAndOpacity(FSlateColor::UseSubduedForeground());
 		}
 
@@ -81,8 +81,8 @@ TSharedPtr<SWidget> FEpithWindowElement_Spacer::Draw(const FEpithDrawContext& Co
 
 	// The bar only reaches along its length: sideways for a Vertical Group's (horizontal) bar, up and down for a Horizontal Group's
 	const FMargin Reach = bVertical
-		? FMargin(Context.SpacerReach.Left, 0.0f, Context.SpacerReach.Right, 0.0f)
-		: FMargin(0.0f, Context.SpacerReach.Top, 0.0f, Context.SpacerReach.Bottom);
+		? FMargin(Context.DividerReach.Left, 0.0f, Context.DividerReach.Right, 0.0f)
+		: FMargin(0.0f, Context.DividerReach.Top, 0.0f, Context.DividerReach.Bottom);
 
 	// 8 x 8; the group stretches it the other way (full width in a Vertical Group, full height in a Horizontal Group)
 	return SNew(SBox)
@@ -93,7 +93,7 @@ TSharedPtr<SWidget> FEpithWindowElement_Spacer::Draw(const FEpithDrawContext& Co
 			.HeightOverride(Size)
 			[
 				bFilled
-					? StaticCastSharedRef<SWidget>(SNew(EpithSpacer::SBar).Reach(Reach))
+					? StaticCastSharedRef<SWidget>(SNew(EpithDivider::SBar).Reach(Reach))
 					: SNullWidget::NullWidget
 			]
 		];

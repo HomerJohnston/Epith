@@ -41,13 +41,12 @@ struct FEpithColumnSettings
 {
 	GENERATED_BODY()
 
-	/** Width of the name column (including indentation for nested rows). 0 = as wide as the widest name in the group. */
-	UPROPERTY(EditDefaultsOnly, meta = (ClampMin = 0, UIMin = 0, UIMax = 600))
-	float NameColumnWidth = 0.0f;
-
-	/** Width of the value column. 0 = each value takes the width it needs. */
-	UPROPERTY(EditDefaultsOnly, meta = (ClampMin = 0, UIMin = 0, UIMax = 600))
-	float ValueColumnWidth = 0.0f;
+	/**
+	 * Share of each row's width taken by the name column (including indentation for nested rows), from 0 to 1. The value
+	 * column takes the rest. 0 = as wide as the widest name in the group.
+	 */
+	UPROPERTY(EditDefaultsOnly, DisplayName = "Name Column Width", meta = (ClampMin = 0, ClampMax = 1, UIMin = 0, UIMax = 1))
+	float NameColumnFraction = 0.0f;
 };
 
 USTRUCT(meta = (Hidden))

@@ -12,6 +12,13 @@ struct FEpithWindowElement_HorizontalGroup_Slot
 	UPROPERTY(EditDefaultsOnly, DisplayName = "Slot Appearance")
 	FEpithWindowElement_BoxDisplayParams DisplayParams;
 
+	/**
+	 * Share of the group's width this slot takes, from 0 to 1. 0 = an equal share of what the other slots leave. Dividers
+	 * ignore this and take only the width they need.
+	 */
+	UPROPERTY(EditDefaultsOnly, DisplayName = "Width", meta = (ClampMin = 0, ClampMax = 1, UIMin = 0, UIMax = 1))
+	float WidthFraction = 0.0f;
+
 	UPROPERTY(EditDefaultsOnly, DisplayName = "Element", meta = (ShowOnlyInnerProperties, ExcludeBaseStruct))
 	TInstancedStruct<FEpithWindowElement> Child;
 };

@@ -4,7 +4,7 @@
 #include "Epith/Style/EpithStyle.h"
 #include "Epith/Widgets/EpithDrawContext.h"
 #include "Epith/Widgets/EpithWindowElement_Property.h"
-#include "Epith/Widgets/EpithWindowElement_Spacer.h"
+#include "Epith/Widgets/EpithWindowElement_Divider.h"
 
 #define LOCTEXT_NAMESPACE "Epith"
 
@@ -16,8 +16,8 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 	// This group's property rows line up with each other
 	const FEpithDrawContext ChildContext = Context.WithColumns(Columns, EEpithGroupAxis::Vertical);
 
-	// Filled spacers join up across groups (see FEpithDrawContext::SpacerReach). Not in the designer: its chrome sits between slots.
-	const bool bJoinSpacers = !Context.IsDesigning();
+	// Filled dividers join up across groups (see FEpithDrawContext::DividerReach). Not in the designer: its chrome sits between slots.
+	const bool bJoinDividers = !Context.IsDesigning();
 	const FMargin GroupBorderPadding = Border > 0 ? FEpithStyle::GetBorderPadding(Border, false) : FMargin(0.0f);
 
 	// The space between a slot's edge and its content: its Padding setting plus its border
@@ -43,24 +43,24 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 
 		FEpithDrawContext SlotContext = ChildContext;
 
-		if (bJoinSpacers)
+		if (bJoinDividers)
 		{
 			const FMargin Inset = GetSlotInset(i);
-			FMargin& Reach = SlotContext.SpacerReach;
+			FMargin& Reach = SlotContext.DividerReach;
 
-			// A spacer bar beside this whole group: pass it on across the group to every slot, past this group's border and the slot's inset
-			Reach.Left = Context.SpacerReach.Left > 0.0f ? Context.SpacerReach.Left + GroupBorderPadding.Left + Inset.Left : 0.0f;
-			Reach.Right = Context.SpacerReach.Right > 0.0f ? Context.SpacerReach.Right + GroupBorderPadding.Right + Inset.Right : 0.0f;
+			// A divider bar beside this whole group: pass it on across the group to every slot, past this group's border and the slot's inset
+			Reach.Left = Context.DividerReach.Left > 0.0f ? Context.DividerReach.Left + GroupBorderPadding.Left + Inset.Left : 0.0f;
+			Reach.Right = Context.DividerReach.Right > 0.0f ? Context.DividerReach.Right + GroupBorderPadding.Right + Inset.Right : 0.0f;
 
-			// A filled spacer in the slot before or after this one: the distance from this slot's content to its bar
-			if (i > 0 && EpithDraw::IsFilledSpacer(Slots[i - 1].Child))
+			// A filled divider in the slot before or after this one: the distance from this slot's content to its bar
+			if (i > 0 && EpithDraw::IsFilledDivider(Slots[i - 1].Child))
 			{
-				Reach.Top = FEpithWindowElement_Spacer::PaddingAlongGroup + GetSlotInset(i - 1).Bottom + Inset.Top;
+				Reach.Top = FEpithWindowElement_Divider::PaddingAlongGroup + GetSlotInset(i - 1).Bottom + Inset.Top;
 			}
 
-			if (i < Slots.Num() - 1 && EpithDraw::IsFilledSpacer(Slots[i + 1].Child))
+			if (i < Slots.Num() - 1 && EpithDraw::IsFilledDivider(Slots[i + 1].Child))
 			{
-				Reach.Bottom = FEpithWindowElement_Spacer::PaddingAlongGroup + GetSlotInset(i + 1).Top + Inset.Bottom;
+				Reach.Bottom = FEpithWindowElement_Divider::PaddingAlongGroup + GetSlotInset(i + 1).Top + Inset.Bottom;
 			}
 		}
 

@@ -18,7 +18,8 @@
 #include "Epith/Widgets/EpithWindowElement_HorizontalGroup.h"
 #include "Epith/Widgets/EpithWindowElement_Property.h"
 #include "Epith/Widgets/EpithWindowElement_SpecialControl.h"
-#include "Epith/Widgets/EpithWindowElement_Spacer.h"
+#include "Epith/Widgets/EpithWindowElement_Divider.h"
+#include "Epith/Widgets/EpithWindowElement_EmptySpace.h"
 #include "Epith/Widgets/EpithWindowElement_TabbedGroup.h"
 #include "Epith/Widgets/EpithWindowElement_VerticalGroup.h"
 #include "Framework/Application/IMenu.h"
@@ -52,6 +53,12 @@
 
 namespace EpithDesigner
 {
+	/**
+	 * How much a column or slot boundary moves per pixel the cursor moves while dragging its handle: half speed, so 10 px of
+	 * cursor movement moves it 5 px.
+	 */
+	constexpr float HandleDragSpeed = 0.5f;
+
 	/** What an empty slot can become, in menu order. */
 	const TArray<const UScriptStruct*>& GetElementTypes()
 	{
@@ -63,7 +70,8 @@ namespace EpithDesigner
 			FEpithWindowElement_TabbedGroup::StaticStruct(),
 			FEpithWindowElement_Property::StaticStruct(),
 			FEpithWindowElement_SpecialControl::StaticStruct(),
-			FEpithWindowElement_Spacer::StaticStruct(),
+			FEpithWindowElement_Divider::StaticStruct(),
+			FEpithWindowElement_EmptySpace::StaticStruct(),
 		};
 
 		return Types;
@@ -80,7 +88,8 @@ namespace EpithDesigner
 			{ FEpithWindowElement_TabbedGroup::StaticStruct(),		TEXT("Epith.ElementIcon.TabbedGroup") },
 			{ FEpithWindowElement_Property::StaticStruct(),			TEXT("Epith.ElementIcon.Property") },
 			{ FEpithWindowElement_SpecialControl::StaticStruct(),	TEXT("Epith.ElementIcon.SpecialControl") },
-			{ FEpithWindowElement_Spacer::StaticStruct(),			TEXT("Epith.ElementIcon.Spacer") },
+			{ FEpithWindowElement_Divider::StaticStruct(),			TEXT("Epith.ElementIcon.Divider") },
+			{ FEpithWindowElement_EmptySpace::StaticStruct(),		TEXT("Epith.ElementIcon.Spacer") },
 		};
 
 		const FName* IconName = IconNames.Find(Type);
@@ -757,15 +766,15 @@ private:
 
 /**
  * An empty slot that accepts a property or an element type dragged from the designer's left pane, highlighted while one it
- * accepts is held over it. A Spacer is refused outside Vertical and Horizontal Groups (bAllowSpacer), as in the slot's menu.
+ * accepts is held over it. A Divider is refused outside Vertical and Horizontal Groups (bAllowDivider), as in the slot's menu.
  */
 class SEpithPaletteSlotDropTarget : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SEpithPaletteSlotDropTarget)
-		: _bAllowSpacer(false)
+		: _bAllowDivider(false)
 		{}
-		SLATE_ARGUMENT(bool, bAllowSpacer)
+		SLATE_ARGUMENT(bool, bAllowDivider)
 		SLATE_ARGUMENT(TFunction<void(FName)>, OnDropProperty)
 		SLATE_ARGUMENT(TFunction<void(const UScriptStruct*)>, OnDropElementType)
 		SLATE_DEFAULT_SLOT(FArguments, Content)
@@ -773,7 +782,7 @@ public:
 
 	void Construct(const FArguments& InArgs)
 	{
-		bAllowSpacer = InArgs._bAllowSpacer;
+		bAllowDivider = InArgs._bAllowDivider;
 		OnDropProperty = InArgs._OnDropProperty;
 		OnDropElementType = InArgs._OnDropElementType;
 
@@ -799,7 +808,7 @@ public:
 			}
 			else
 			{
-				ElementOperation->SetToolTip(LOCTEXT("ElementDrop_SpacerHere", "A Spacer can only go in a Vertical or Horizontal Group"), FAppStyle::GetBrush("Graph.ConnectorFeedback.Error"));
+				ElementOperation->SetToolTip(LOCTEXT("ElementDrop_DividerHere", "A Divider can only go in a Vertical or Horizontal Group"), FAppStyle::GetBrush("Graph.ConnectorFeedback.Error"));
 			}
 		}
 	}
@@ -835,7 +844,7 @@ public:
 
 		if (TSharedPtr<FEpithElementTypeDragDrop> ElementOperation = DragDropEvent.GetOperationAs<FEpithElementTypeDragDrop>())
 		{
-			// A refused type (a Spacer here) is still handled, so the drop doesn't fall through to anything around this slot
+			// A refused type (a Divider here) is still handled, so the drop doesn't fall through to anything around this slot
 			if (OnDropElementType && CanTake(ElementOperation->ElementType))
 			{
 				OnDropElementType(ElementOperation->ElementType);
@@ -884,7 +893,7 @@ public:
 private:
 	bool CanTake(const UScriptStruct* ElementType) const
 	{
-		return ElementType && (bAllowSpacer || ElementType != FEpithWindowElement_Spacer::StaticStruct());
+		return ElementType && (bAllowDivider || ElementType != FEpithWindowElement_Divider::StaticStruct());
 	}
 
 	/** A drag from the left pane (a property or an element type), or null for anything else. */
@@ -898,7 +907,7 @@ private:
 		return DragDropEvent.GetOperationAs<FEpithElementTypeDragDrop>();
 	}
 
-	bool bAllowSpacer = false;
+	bool bAllowDivider = false;
 	TFunction<void(FName)> OnDropProperty;
 	TFunction<void(const UScriptStruct*)> OnDropElementType;
 	mutable bool bDragOver = false;
@@ -1703,6 +1712,9 @@ void SEpithPanelDesigner::Redraw()
 		SNew(SBox)
 		.HAlign(HAlign_Center)
 		[
+			SNew(SOverlay)
+			+ SOverlay::Slot()
+			[
 			// A thin black outline around the whole panel, so its edges show against the editor background
 			SNew(SBorder)
 			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
@@ -1715,7 +1727,12 @@ void SEpithPanelDesigner::Redraw()
 			.Padding(0)
 			[
 				SNew(SBox)
-				.MinDesiredWidth(PanelDefinition->GetMinWidth())
+				.WidthOverride_Lambda([this]()
+				{
+					// While the right edge is dragged, the width being dragged to; otherwise the saved Width
+					const UEpithPanelDefinition* Def = Definition.Get();
+					return FOptionalSize(LivePanelWidth.IsSet() ? LivePanelWidth.GetValue() : (Def ? Def->GetWidth() : 360.0f));
+				})
 				[
 					SNew(SVerticalBox)
 					+ SVerticalBox::Slot()
@@ -1739,6 +1756,14 @@ void SEpithPanelDesigner::Redraw()
 					]
 				]
 			]
+			]
+			]
+			// The panel's right edge: drag it to change the panel's Width
+			+ SOverlay::Slot()
+			.HAlign(HAlign_Right)
+			.VAlign(VAlign_Fill)
+			[
+				MakePanelWidthGrip()
 			]
 		]);
 
@@ -1835,10 +1860,10 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 			SNew(SComboButton)
 			.ComboButtonStyle(&EpithDesigner::GetChooseComboStyle())
 			.ContentPadding(FMargin(6, 2))
-			.OnGetMenuContent_Lambda([this, SlotPtr, bAllowSpacer = Actions.Reorder != EEpithSlotReorder::None]()
+			.OnGetMenuContent_Lambda([this, SlotPtr, bAllowDivider = Actions.Reorder != EEpithSlotReorder::None]()
 			{
-				// Only Vertical and Horizontal Group slots are reorderable, and only those can hold a Spacer
-				return MakeElementTypeMenu(SlotPtr, bAllowSpacer);
+				// Only Vertical and Horizontal Group slots are reorderable, and only those can hold a Divider
+				return MakeElementTypeMenu(SlotPtr, bAllowDivider);
 			})
 			.ButtonContent()
 			[
@@ -1899,7 +1924,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 	// A property or element type dragged from the left pane fills this slot: a Property element showing that property, or a
 	// new element of that type (as if picked from the menu above)
 	TSharedRef<SWidget> DropTarget = SNew(SEpithPaletteSlotDropTarget)
-		.bAllowSpacer(Actions.Reorder != EEpithSlotReorder::None)
+		.bAllowDivider(Actions.Reorder != EEpithSlotReorder::None)
 		.OnDropElementType([this, SlotPtr](const UScriptStruct* Type)
 		{
 			Edit(FText::Format(LOCTEXT("AddElement", "Add {0}"), Type->GetDisplayNameText()), [SlotPtr, Type]()
@@ -2231,13 +2256,13 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakePropertyPicker(FName CurrentPath, T
 // Menus
 // ------------------------------------------------------------------------------------------------
 
-TSharedRef<SWidget> SEpithPanelDesigner::MakeElementTypeMenu(TInstancedStruct<FEpithWindowElement>* Slot, bool bAllowSpacer)
+TSharedRef<SWidget> SEpithPanelDesigner::MakeElementTypeMenu(TInstancedStruct<FEpithWindowElement>* Slot, bool bAllowDivider)
 {
 	FMenuBuilder Menu(true, nullptr);
 
 	for (const UScriptStruct* Type : EpithDesigner::GetElementTypes())
 	{
-		if (Type == FEpithWindowElement_Spacer::StaticStruct() && !bAllowSpacer)
+		if (Type == FEpithWindowElement_Divider::StaticStruct() && !bAllowDivider)
 		{
 			continue;
 		}
@@ -2394,14 +2419,13 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeElementMenu(TInstancedStruct<FEpith
 // ------------------------------------------------------------------------------------------------
 
 /**
- * Invisible except over a property row's two column lines (Name | Value | Reset), where it shows a resize cursor and a highlight.
- * Dragging a line resizes that column for the whole group live; letting go saves the width to the group's settings.
- * Double-clicking a line sets the column back to automatic. Everywhere else, clicks pass through to the designer frame.
+ * The handle on a property row's name/value line: dragging it sets the group's name column to a share of the row's width.
+ * Double-clicking it makes the column automatic again (as wide as the widest name).
  */
 class SEpithColumnHandles : public SLeafWidget
 {
 public:
-	using FOnCommit = TFunction<void(bool bNameColumn, float NewWidth)>;
+	using FOnCommit = TFunction<void(float NewFraction)>;
 
 	SLATE_BEGIN_ARGS(SEpithColumnHandles) {}
 		SLATE_ARGUMENT(TSharedPtr<FEpithColumnLayout>, Columns)
@@ -2421,11 +2445,9 @@ public:
 
 	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
 	{
-		const int32 Line = DraggingLine != INDEX_NONE ? DraggingLine : HoveredLine;
-
-		if (Line != INDEX_NONE && Columns.IsValid())
+		if ((bDragging || bHovered) && Columns.IsValid())
 		{
-			const float X = GetLineX(Line, AllottedGeometry);
+			const float X = GetLineX(AllottedGeometry);
 
 			FSlateDrawElement::MakeBox(
 				OutDrawElements,
@@ -2441,71 +2463,66 @@ public:
 
 	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
 	{
-		if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+		if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton || !IsOverLine(MouseEvent, MyGeometry))
 		{
 			return FReply::Unhandled();
 		}
 
-		const float LocalX = MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X;
-		const int32 Line = FindLine(LocalX, MyGeometry);
+		const float RowWidth = MyGeometry.GetLocalSize().X;
 
-		if (Line == INDEX_NONE)
+		if (RowWidth <= 0.0f)
 		{
 			return FReply::Unhandled();
 		}
 
-		DraggingLine = Line;
-		DragStartScreenX = MouseEvent.GetScreenSpacePosition().X;
-		DragStartWidth = GetColumnWidth(Line, MyGeometry);
-		LiveWidth = DragStartWidth;
+		bDragging = true;
 		bMoved = false;
+		DragStartScreenX = MouseEvent.GetScreenSpacePosition().X;
+
+		// An automatic column starts from the share of the row it has right now, so the line doesn't jump
+		StartFraction = GetLineX(MyGeometry) / RowWidth;
+		LiveFraction = StartFraction;
 
 		return FReply::Handled().CaptureMouse(SharedThis(this));
 	}
 
 	virtual FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
 	{
-		if (DraggingLine != INDEX_NONE && HasMouseCapture())
+		if (bDragging && HasMouseCapture())
 		{
 			// How far the cursor has moved on screen since the drag began, in the panel's own units (screen pixels / scale, for
-			// DPI and zoom). Not measured in the panel's local space: resizing a column resizes the panel, which moves that space
-			// (and the centred panel's left edge) under the cursor, and the width would chase itself.
-			// Half speed (DragSpeed): 10 px of cursor movement changes the column by 5 px.
+			// DPI and zoom), at DragSpeed, as a share of the row
 			const float Scale = FMath::Max(MyGeometry.GetAccumulatedLayoutTransform().GetScale(), UE_KINDA_SMALL_NUMBER);
-			const float Delta = (MouseEvent.GetScreenSpacePosition().X - DragStartScreenX) / Scale * DragSpeed;
+			const float Delta = (MouseEvent.GetScreenSpacePosition().X - DragStartScreenX) / Scale * EpithDesigner::HandleDragSpeed;
 			bMoved |= FMath::Abs(Delta) >= 1.0f;
-			LiveWidth = FMath::RoundToFloat(FMath::Max(MinColumnWidth, DragStartWidth + Delta));
 
-			if (DraggingLine == 0)
-			{
-				Columns->SetFixedNameWidth(LiveWidth);
-			}
-			else
-			{
-				Columns->SetFixedValueWidth(LiveWidth);
-			}
+			const float RowWidth = FMath::Max(MyGeometry.GetLocalSize().X, 1.0f);
+			LiveFraction = FMath::Clamp(StartFraction + Delta / RowWidth, FEpithColumnLayout::MinNameFraction, FEpithColumnLayout::MaxNameFraction);
+
+			// Rounded to a whole percent, which is plenty to line things up by eye
+			LiveFraction = FMath::RoundToFloat(LiveFraction * 100.0f) / 100.0f;
+			Columns->SetNameFraction(LiveFraction);
 
 			return FReply::Handled();
 		}
 
-		HoveredLine = FindLine(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X, MyGeometry);
+		bHovered = IsOverLine(MouseEvent, MyGeometry);
 		return FReply::Unhandled();
 	}
 
 	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
 	{
-		if (DraggingLine == INDEX_NONE || MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+		if (!bDragging || MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
 		{
 			return FReply::Unhandled();
 		}
 
-		const int32 Line = DraggingLine;
-		DraggingLine = INDEX_NONE;
+		bDragging = false;
 
-		// A click without a drag changes nothing (and doesn't turn an automatic width into a fixed one)
+		// A click without a drag changes nothing (and doesn't turn an automatic width into a fixed share)
 		if (bMoved && OnCommit)
 		{
-			OnCommit(Line == 0, LiveWidth);
+			OnCommit(LiveFraction);
 		}
 
 		return FReply::Handled().ReleaseMouseCapture();
@@ -2513,16 +2530,14 @@ public:
 
 	virtual FReply OnMouseButtonDoubleClick(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
 	{
-		const int32 Line = FindLine(MyGeometry.AbsoluteToLocal(MouseEvent.GetScreenSpacePosition()).X, MyGeometry);
-
-		if (Line == INDEX_NONE || MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+		if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton || !IsOverLine(MouseEvent, MyGeometry))
 		{
 			return FReply::Unhandled();
 		}
 
 		if (OnCommit)
 		{
-			OnCommit(Line == 0, 0.0f);
+			OnCommit(0.0f);
 		}
 
 		return FReply::Handled();
@@ -2531,17 +2546,24 @@ public:
 	virtual void OnMouseLeave(const FPointerEvent& MouseEvent) override
 	{
 		SLeafWidget::OnMouseLeave(MouseEvent);
-		HoveredLine = INDEX_NONE;
+		bHovered = false;
 	}
 
 	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override
 	{
-		DraggingLine = INDEX_NONE;
+		if (bDragging && Columns.IsValid())
+		{
+			// Cancelled: back to the saved width
+			const FEpithColumnSettings* Settings = Columns->GetSourceSettings();
+			Columns->SetNameFraction(Settings ? Settings->NameColumnFraction : 0.0f);
+		}
+
+		bDragging = false;
 	}
 
 	virtual FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override
 	{
-		if (DraggingLine != INDEX_NONE || FindLine(MyGeometry.AbsoluteToLocal(CursorEvent.GetScreenSpacePosition()).X, MyGeometry) != INDEX_NONE)
+		if (bDragging || IsOverLine(CursorEvent, MyGeometry))
 		{
 			return FCursorReply::Cursor(EMouseCursor::ResizeLeftRight);
 		}
@@ -2551,124 +2573,301 @@ public:
 
 private:
 	static constexpr float GrabDistance = 3.0f;
-	static constexpr float MinColumnWidth = 16.0f;
 
-	/** How much a column changes per pixel the cursor moves while dragging its line. */
-	static constexpr float DragSpeed = 0.5f;
-
-	float GetNameLineX() const
+	/** Left edge of the name/value line, where the row puts it (EpithPropertyRow's column split) */
+	float GetLineX(const FGeometry& Geometry) const
 	{
-		const FOptionalSize NameWidth = Columns->GetNameWidth();
-		return NameWidth.IsSet() ? NameWidth.Get() : 0.0f;
+		return Columns.IsValid() ? Columns->GetNameWidth(Geometry.GetLocalSize().X).Get(0.0f) : 0.0f;
 	}
 
-	/** Left edge of a column line, matching the row layout in EpithPropertyRow: the value column fills the row unless its width is fixed. */
-	float GetLineX(int32 Line, const FGeometry& Geometry) const
-	{
-		const float NameX = GetNameLineX();
-
-		if (Line == 0)
-		{
-			return NameX;
-		}
-
-		const FOptionalSize ValueWidth = Columns->GetValueWidth();
-
-		return ValueWidth.IsSet()
-			? NameX + FEpithColumnLayout::LineWidth + ValueWidth.Get()
-			: Geometry.GetLocalSize().X - FEpithColumnLayout::ResetColumnWidth - FEpithColumnLayout::LineWidth;
-	}
-
-	float GetColumnWidth(int32 Line, const FGeometry& Geometry) const
-	{
-		return Line == 0 ? GetNameLineX() : GetLineX(1, Geometry) - GetNameLineX() - FEpithColumnLayout::LineWidth;
-	}
-
-	int32 FindLine(float LocalX, const FGeometry& Geometry) const
+	bool IsOverLine(const FPointerEvent& Event, const FGeometry& Geometry) const
 	{
 		if (!Columns.IsValid())
 		{
-			return INDEX_NONE;
+			return false;
 		}
 
-		int32 Best = INDEX_NONE;
-		float BestDistance = GrabDistance;
-
-		for (int32 Line = 0; Line < 2; ++Line)
-		{
-			const float Distance = FMath::Abs(LocalX - (GetLineX(Line, Geometry) + 0.5f));
-
-			if (Distance <= BestDistance)
-			{
-				Best = Line;
-				BestDistance = Distance;
-			}
-		}
-
-		return Best;
+		const float LocalX = Geometry.AbsoluteToLocal(Event.GetScreenSpacePosition()).X;
+		return FMath::Abs(LocalX - (GetLineX(Geometry) + 0.5f)) <= GrabDistance;
 	}
 
 	TSharedPtr<FEpithColumnLayout> Columns;
 	FOnCommit OnCommit;
 
-	int32 HoveredLine = INDEX_NONE;
-	int32 DraggingLine = INDEX_NONE;
+	bool bHovered = false;
+	bool bDragging = false;
+	bool bMoved = false;
+
 	/** Where the cursor was on screen when the drag began. */
 	float DragStartScreenX = 0.0f;
-	float DragStartWidth = 0.0f;
-	float LiveWidth = 0.0f;
-	bool bMoved = false;
+	float StartFraction = 0.0f;
+	float LiveFraction = 0.0f;
 };
 
-TSharedRef<SWidget> SEpithPanelDesigner::MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot)
+/**
+ * A thin line that can be clicked (OnClicked) and/or dragged sideways (OnResize...): the insert dividers between slots, and
+ * the panel's right edge in the preview. The line is faint until hovered (IdleOpacity), then drawn in the selection color.
+ */
+class SEpithResizeGrip : public SLeafWidget
+{
+public:
+	SLATE_BEGIN_ARGS(SEpithResizeGrip)
+		: _bRunsHorizontally(false)
+		, _Thickness(3.0f)
+		, _IdleOpacity(0.12f)
+		{}
+		/** A horizontal line (dragging does nothing then); otherwise a vertical one */
+		SLATE_ARGUMENT(bool, bRunsHorizontally)
+		/** Width of the grip across the line (the line itself is 1px, in the middle) */
+		SLATE_ARGUMENT(float, Thickness)
+		SLATE_ARGUMENT(float, IdleOpacity)
+		SLATE_ARGUMENT(TFunction<void()>, OnClicked)
+		/** Whether dragging resizes right now; unset = never */
+		SLATE_ARGUMENT(TFunction<bool()>, CanResize)
+		SLATE_ARGUMENT(TFunction<void()>, OnResizeBegin)
+		/** Delta: how far the cursor is from where the drag began, sideways, in local units */
+		SLATE_ARGUMENT(TFunction<void(float)>, OnResize)
+		SLATE_ARGUMENT(TFunction<void()>, OnResizeEnd)
+		SLATE_ARGUMENT(TFunction<void()>, OnResizeCancel)
+	SLATE_END_ARGS()
+
+	void Construct(const FArguments& InArgs)
+	{
+		bRunsHorizontally = InArgs._bRunsHorizontally;
+		Thickness = InArgs._Thickness;
+		IdleOpacity = InArgs._IdleOpacity;
+		OnClicked = InArgs._OnClicked;
+		CanResizeFunc = InArgs._CanResize;
+		OnResizeBegin = InArgs._OnResizeBegin;
+		OnResize = InArgs._OnResize;
+		OnResizeEnd = InArgs._OnResizeEnd;
+		OnResizeCancel = InArgs._OnResizeCancel;
+	}
+
+	virtual FVector2D ComputeDesiredSize(float) const override
+	{
+		return bRunsHorizontally ? FVector2D(0.0f, Thickness) : FVector2D(Thickness, 0.0f);
+	}
+
+	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
+	{
+		const bool bLit = bPressed || IsHovered();
+		const FLinearColor Color = bLit ? FStyleColors::Select.GetColor(InWidgetStyle) : FLinearColor(1.0f, 1.0f, 1.0f, IdleOpacity);
+
+		if (Color.A <= 0.0f)
+		{
+			return LayerId;
+		}
+
+		const FVector2f Size = AllottedGeometry.GetLocalSize();
+
+		// The 1px line in the middle; 3px wide while resizing, so it's clear what's being dragged
+		const float LineThickness = bResizing ? 3.0f : 1.0f;
+		const FVector2f LineSize = bRunsHorizontally ? FVector2f(Size.X, LineThickness) : FVector2f(LineThickness, Size.Y);
+		const FVector2f LineOffset = bRunsHorizontally ? FVector2f(0.0f, (Size.Y - LineThickness) * 0.5f) : FVector2f((Size.X - LineThickness) * 0.5f, 0.0f);
+
+		FSlateDrawElement::MakeBox(OutDrawElements, LayerId, AllottedGeometry.ToPaintGeometry(LineSize, FSlateLayoutTransform(LineOffset)), FAppStyle::GetBrush("WhiteBrush"), ESlateDrawEffect::None, Color);
+
+		return LayerId + 1;
+	}
+
+	virtual FReply OnMouseButtonDown(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+		{
+			return FReply::Unhandled();
+		}
+
+		bPressed = true;
+		bResizing = false;
+		PressScreenX = MouseEvent.GetScreenSpacePosition().X;
+
+		return FReply::Handled().CaptureMouse(SharedThis(this));
+	}
+
+	virtual FReply OnMouseMove(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		if (!bPressed || !HasMouseCapture())
+		{
+			return FReply::Unhandled();
+		}
+
+		const float Scale = FMath::Max(MyGeometry.GetAccumulatedLayoutTransform().GetScale(), UE_KINDA_SMALL_NUMBER);
+		const float Delta = (MouseEvent.GetScreenSpacePosition().X - PressScreenX) / Scale;
+
+		// A few pixels of slack, so a slightly shaky click still counts as a click
+		if (!bResizing && FMath::Abs(Delta) >= DragThreshold && CanResize())
+		{
+			bResizing = true;
+
+			if (OnResizeBegin)
+			{
+				OnResizeBegin();
+			}
+		}
+
+		if (bResizing && OnResize)
+		{
+			OnResize(Delta);
+		}
+
+		return FReply::Handled();
+	}
+
+	virtual FReply OnMouseButtonUp(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
+	{
+		if (!bPressed || MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+		{
+			return FReply::Unhandled();
+		}
+
+		const bool bWasResizing = bResizing;
+		bPressed = false;
+		bResizing = false;
+
+		if (bWasResizing)
+		{
+			if (OnResizeEnd)
+			{
+				OnResizeEnd();
+			}
+		}
+		else if (OnClicked && MyGeometry.IsUnderLocation(MouseEvent.GetScreenSpacePosition()))
+		{
+			OnClicked();
+		}
+
+		return FReply::Handled().ReleaseMouseCapture();
+	}
+
+	virtual void OnMouseCaptureLost(const FCaptureLostEvent& CaptureLostEvent) override
+	{
+		// Released normally, the flags are already clear; otherwise the drag was cut off
+		if (bResizing && OnResizeCancel)
+		{
+			OnResizeCancel();
+		}
+
+		bPressed = false;
+		bResizing = false;
+	}
+
+	virtual FCursorReply OnCursorQuery(const FGeometry& MyGeometry, const FPointerEvent& CursorEvent) const override
+	{
+		if (bResizing || CanResize())
+		{
+			return FCursorReply::Cursor(EMouseCursor::ResizeLeftRight);
+		}
+
+		return OnClicked ? FCursorReply::Cursor(EMouseCursor::Hand) : FCursorReply::Unhandled();
+	}
+
+private:
+	static constexpr float DragThreshold = 3.0f;
+
+	bool CanResize() const
+	{
+		return !bRunsHorizontally && CanResizeFunc && CanResizeFunc();
+	}
+
+	bool bRunsHorizontally = false;
+	float Thickness = 3.0f;
+	float IdleOpacity = 0.12f;
+
+	TFunction<void()> OnClicked;
+	TFunction<bool()> CanResizeFunc;
+	TFunction<void()> OnResizeBegin;
+	TFunction<void(float)> OnResize;
+	TFunction<void()> OnResizeEnd;
+	TFunction<void()> OnResizeCancel;
+
+	bool bPressed = false;
+	bool bResizing = false;
+	float PressScreenX = 0.0f;
+};
+
+TSharedRef<SWidget> SEpithPanelDesigner::MakePanelWidthGrip()
+{
+	TSharedRef<SEpithResizeGrip> Grip = SNew(SEpithResizeGrip)
+		.Thickness(5.0f)
+		.IdleOpacity(0.0f)
+		.CanResize([]() { return true; })
+		.OnResizeBegin([this]()
+		{
+			const UEpithPanelDefinition* PanelDefinition = Definition.Get();
+			PanelWidthAtDragStart = PanelDefinition ? PanelDefinition->GetWidth() : 360.0f;
+			LivePanelWidth = PanelWidthAtDragStart;
+		})
+		.OnResize([this](float Delta)
+		{
+			// The panel is centred, so it grows by twice the edge's movement: the edge stays under the cursor
+			const float Width = FMath::RoundToFloat(PanelWidthAtDragStart + Delta * 2.0f);
+			LivePanelWidth = FMath::Clamp(Width, UEpithPanelDefinition::MinPanelWidth, UEpithPanelDefinition::MaxPanelWidth);
+		})
+		.OnResizeEnd([this]()
+		{
+			const float Width = LivePanelWidth.Get(PanelWidthAtDragStart);
+			LivePanelWidth.Reset();
+
+			Edit(LOCTEXT("ResizePanelTransaction", "Resize Panel"), [this, Width]()
+			{
+				if (UEpithPanelDefinition* PanelDefinition = Definition.Get())
+				{
+					PanelDefinition->SetWidth(Width);
+				}
+			});
+		})
+		.OnResizeCancel([this]()
+		{
+			LivePanelWidth.Reset();
+		});
+
+	Grip->SetToolTipText(LOCTEXT("PanelWidthGrip_Tooltip", "Drag to change the panel's width"));
+
+	return Grip;
+}
+
+TSharedRef<SWidget> SEpithPanelDesigner::MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot, const FEpithDividerResize& Resize)
 {
 	constexpr float ButtonThickness = 3.0f;
-	constexpr float LineThickness = 1.0f;
 
-	TSharedRef<TWeakPtr<SWidget>> ButtonHolder = MakeShared<TWeakPtr<SWidget>>();
+	const bool bCanEverResize = !bRunsHorizontally && Resize.CanResize && Resize.Update;
 
-	// A 1px line, faint until hovered
-	TSharedRef<SWidget> Line = SNew(SBox)
-		.WidthOverride(bRunsHorizontally ? FOptionalSize() : FOptionalSize(LineThickness))
-		.HeightOverride(bRunsHorizontally ? FOptionalSize(LineThickness) : FOptionalSize())
-		[
-			SNew(SImage)
-			.Image(FAppStyle::GetBrush("WhiteBrush"))
-			.ColorAndOpacity_Lambda([ButtonHolder]()
-			{
-				TSharedPtr<SWidget> Button = ButtonHolder->Pin();
-
-				return Button.IsValid() && Button->IsHovered()
-					? FSlateColor(EStyleColor::Select)
-					: FSlateColor(FLinearColor(1.0f, 1.0f, 1.0f, 0.12f));
-			})
-		];
-
-	// The 3px button around it (1px of padding either side of the line)
-	TSharedRef<SButton> Button = SNew(SButton)
-		.ButtonStyle(FAppStyle::Get(), "NoBorder")
-		.ContentPadding(bRunsHorizontally ? FMargin(0.0f, 1.0f) : FMargin(1.0f, 0.0f))
-		.HAlign(HAlign_Fill)
-		.VAlign(VAlign_Fill)
-		.Cursor(EMouseCursor::Hand)
-		.ToolTipText(ToolTip)
-		.OnClicked_Lambda([this, InsertSlot]()
+	TSharedRef<SEpithResizeGrip> Grip = SNew(SEpithResizeGrip)
+		.bRunsHorizontally(bRunsHorizontally)
+		.Thickness(ButtonThickness)
+		.OnClicked([this, InsertSlot]()
 		{
 			Edit(LOCTEXT("InsertSlotTransaction", "Insert Slot"), [InsertSlot]() { InsertSlot(); });
-			return FReply::Handled();
 		})
-		[
-			Line
-		];
+		.CanResize(bCanEverResize ? Resize.CanResize : TFunction<bool()>())
+		.OnResizeBegin(Resize.Begin)
+		.OnResize([Update = Resize.Update](float Delta)
+		{
+			if (Update)
+			{
+				Update(Delta * EpithDesigner::HandleDragSpeed);
+			}
+		})
+		.OnResizeEnd([this, Commit = Resize.Commit]()
+		{
+			if (Commit)
+			{
+				Edit(LOCTEXT("ResizeSlotsTransaction", "Resize Slots"), Commit);
+			}
+		})
+		.OnResizeCancel(Resize.Cancel);
 
-	*ButtonHolder = Button;
+	Grip->SetToolTipText(bCanEverResize
+		? FText::Format(LOCTEXT("InsertDivider_ResizeTooltip", "{0}\nDrag sideways to resize the slots either side."), ToolTip)
+		: ToolTip);
 
 	return WithMoveDropTarget(
 		SNew(SBox)
 		.WidthOverride(bRunsHorizontally ? FOptionalSize() : FOptionalSize(ButtonThickness))
 		.HeightOverride(bRunsHorizontally ? FOptionalSize(ButtonThickness) : FOptionalSize())
 		[
-			Button
+			Grip
 		],
 		InsertSlot);
 }
@@ -2724,15 +2923,11 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeColumnHandles(const TSharedRef<FEpi
 
 	return SNew(SEpithColumnHandles)
 		.Columns(Columns)
-		.OnCommit([this, Settings](bool bNameColumn, float NewWidth)
+		.OnCommit([this, Settings](float NewFraction)
 		{
-			const FText Description = bNameColumn
-				? LOCTEXT("ResizeNameColumn", "Resize Name Column")
-				: LOCTEXT("ResizeValueColumn", "Resize Value Column");
-
-			Edit(Description, [Settings, bNameColumn, NewWidth]()
+			Edit(LOCTEXT("ResizeNameColumn", "Resize Name Column"), [Settings, NewFraction]()
 			{
-				(bNameColumn ? Settings->NameColumnWidth : Settings->ValueColumnWidth) = NewWidth;
+				Settings->NameColumnFraction = FMath::Clamp(NewFraction, 0.0f, 1.0f);
 			});
 		});
 }

@@ -196,7 +196,7 @@ void SEpithViewportObjectPane::Draw()
 		.Padding(0)
 		[
 			SNew(SBox)
-			.MinDesiredWidth(PanelDefinition.IsValid() ? PanelDefinition->GetMinWidth() : 180.0f)
+			.WidthOverride(PanelDefinition.IsValid() ? PanelDefinition->GetWidth() : 360.0f)
 			[
 				Box
 			]
