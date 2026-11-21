@@ -42,6 +42,10 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Epith|Appearance", meta = (ClampMin = 100, ClampMax = 2000, UIMin = 200, UIMax = 800))
 	float Width = 360;
 
+	/** Clicking this section's header in the viewport collapses or expands it (it starts expanded). */
+	UPROPERTY(EditDefaultsOnly, Category = "Epith|Appearance")
+	bool bFoldable = false;
+
 	UPROPERTY(EditDefaultsOnly, Category = "Epith", meta = (ShowOnlyInnerProperties, ExcludeBaseStruct))
 	TInstancedStruct<FEpithWindowElement> Root;
 
@@ -68,6 +72,11 @@ public:
 
 	static constexpr float MinPanelWidth = 100.0f;
 	static constexpr float MaxPanelWidth = 2000.0f;
+
+	bool IsFoldable() const
+	{
+		return bFoldable;
+	}
 
 	float GetWidth() const
 	{

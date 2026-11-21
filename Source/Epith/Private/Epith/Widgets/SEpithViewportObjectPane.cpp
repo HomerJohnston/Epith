@@ -164,6 +164,12 @@ void SEpithViewportObjectPane::Build()
 
 bool SEpithViewportObjectPane::IsExpanded() const
 {
+	// Not foldable: always open (even if it was collapsed while it was foldable)
+	if (!PanelDefinition.IsValid() || !PanelDefinition->IsFoldable())
+	{
+		return true;
+	}
+
 	return !EpithViewportObjectPane::CollapsedSections.Contains(EpithViewportObjectPane::GetSectionKey(PanelDefinition.Get(), Target.Get()));
 }
 
@@ -219,63 +225,82 @@ void SEpithViewportObjectPane::Draw()
 			Title = PanelDefinition->GetTargetClass()->GetDisplayNameText();
 		}
 
-		// The header sits on a medium-gray ribbon running the full width of the section, flush with its top edge. Clicking it
-		// folds the section away (a little lighter while hovered, so it reads as clickable); the arrow shows which way it is.
-		TSharedPtr<SBorder> Ribbon;
+		TSharedRef<SWidget> Header = SNew(SEpithViewportObjectPaneHeader)
+			.Target(Target.Get())
+			.TitleOverride(Title);
 
-		Box->AddSlot()
-		.AutoHeight()
-		[
-			SAssignNew(Ribbon, SBorder)
-			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-			.Padding(FMargin(4, 6, 20, 6))
-			.Cursor(EMouseCursor::Hand)
-			.ToolTipText(LOCTEXT("ObjectPane_FoldTooltip", "Click to collapse or expand this section"))
-			.OnMouseButtonDown_Lambda([this](const FGeometry&, const FPointerEvent& MouseEvent)
-			{
-				if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
-				{
-					return FReply::Unhandled();
-				}
-
-				SetExpanded(!IsExpanded());
-				return FReply::Handled();
-			})
-			[
-				SNew(SHorizontalBox)
-				+ SHorizontalBox::Slot()
-				.AutoWidth()
-				.VAlign(VAlign_Center)
-				.Padding(0, 0, 0, 0)
-				[
-					SNew(SImage)
-					.Image_Lambda([this]()
-					{
-						return FAppStyle::GetBrush(IsExpanded() ? "TreeArrow_Expanded" : "TreeArrow_Collapsed");
-					})
-					.ColorAndOpacity(FSlateColor::UseForeground())
-				]
-				+ SHorizontalBox::Slot()
-				.FillWidth(1.0f)
-				.VAlign(VAlign_Center)
-				.Padding(4, 0, 0, 0)
-				[
-					SNew(SEpithViewportObjectPaneHeader)
-					.Target(Target.Get())
-					.TitleOverride(Title)
-				]
-			]
-		];
-
-		TWeakPtr<SBorder> WeakRibbon = Ribbon;
-
-		Ribbon->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([WeakRibbon]()
+		// The header sits on a medium-gray ribbon running the full width of the section, flush with its top edge
+		if (!PanelDefinition.IsValid() || !PanelDefinition->IsFoldable())
 		{
-			TSharedPtr<SBorder> PinnedRibbon = WeakRibbon.Pin();
-			const bool bHovered = PinnedRibbon.IsValid() && PinnedRibbon->IsHovered();
+			Box->AddSlot()
+			.AutoHeight()
+			[
+				SNew(SBorder)
+				.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+				.BorderBackgroundColor(EpithViewportObjectPane::HeaderRibbonColor)
+				.Padding(FMargin(20, 6, 20, 6))
+				[
+					Header
+				]
+			];
+		}
+		else
+		{
+			// Foldable: clicking the ribbon folds the section away (a little lighter while hovered, so it reads as clickable),
+			// and an arrow shows which way it is
+			TSharedPtr<SBorder> Ribbon;
 
-			return FSlateColor(bHovered ? EpithViewportObjectPane::HeaderRibbonHoverColor : EpithViewportObjectPane::HeaderRibbonColor);
-		}));
+			Box->AddSlot()
+			.AutoHeight()
+			[
+				SAssignNew(Ribbon, SBorder)
+				.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
+				.Padding(FMargin(4, 6, 20, 6))
+				.Cursor(EMouseCursor::Hand)
+				.ToolTipText(LOCTEXT("ObjectPane_FoldTooltip", "Click to collapse or expand this section"))
+				.OnMouseButtonDown_Lambda([this](const FGeometry&, const FPointerEvent& MouseEvent)
+				{
+					if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+					{
+						return FReply::Unhandled();
+					}
+
+					SetExpanded(!IsExpanded());
+					return FReply::Handled();
+				})
+				[
+					SNew(SHorizontalBox)
+					+ SHorizontalBox::Slot()
+					.AutoWidth()
+					.VAlign(VAlign_Center)
+					[
+						SNew(SImage)
+						.Image_Lambda([this]()
+						{
+							return FAppStyle::GetBrush(IsExpanded() ? "TreeArrow_Expanded" : "TreeArrow_Collapsed");
+						})
+						.ColorAndOpacity(FSlateColor::UseForeground())
+					]
+					+ SHorizontalBox::Slot()
+					.FillWidth(1.0f)
+					.VAlign(VAlign_Center)
+					.Padding(4, 0, 0, 0)
+					[
+						Header
+					]
+				]
+			];
+
+			TWeakPtr<SBorder> WeakRibbon = Ribbon;
+
+			Ribbon->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([WeakRibbon]()
+			{
+				TSharedPtr<SBorder> PinnedRibbon = WeakRibbon.Pin();
+				const bool bHovered = PinnedRibbon.IsValid() && PinnedRibbon->IsHovered();
+
+				return FSlateColor(bHovered ? EpithViewportObjectPane::HeaderRibbonHoverColor : EpithViewportObjectPane::HeaderRibbonColor);
+			}));
+		}
 	}
 
 	// Collapsed along with its padding, so a folded section is just its header

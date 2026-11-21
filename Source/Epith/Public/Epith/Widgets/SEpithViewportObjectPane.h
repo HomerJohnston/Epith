@@ -33,7 +33,8 @@ class SEpithViewportObjectPane : public SCompoundWidget
 	bool HasValidTarget() const { return Target.IsValid(); }
 
 	/**
-	 * Whether the section's content is showing (clicking its header folds it away). Expanded unless the user collapsed it;
+	 * Whether the section's content is showing. Only a Foldable panel definition's section can be collapsed (by clicking its
+	 * header); it's expanded unless the user collapsed it,
 	 * remembered for this editor session per panel definition and target, so it survives the panel being rebuilt or reopened.
 	 */
 	bool IsExpanded() const;
