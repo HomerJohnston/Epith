@@ -239,7 +239,9 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 		}
 
 		// Designer: a divider between this slot and the previous one, which inserts a new slot there when clicked
-		if (Context.IsDesigning() && i > 0)
+		// Designer: a divider left of this slot (inserts a slot there when clicked; an element dragged onto it moves there).
+		// Between two slots, dragging it sideways resizes them.
+		if (Context.IsDesigning())
 		{
 			Box->AddSlot()
 			.AutoWidth()
@@ -248,7 +250,8 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 				{
 					return &SlotsPtr->InsertDefaulted_GetRef(i).Child;
 				},
-				MakeDividerResize(Sizes, MutableSlots, i - 1))
+				FEpithInsertPosition{ &MutableSlots, i },
+				i > 0 ? MakeDividerResize(Sizes, MutableSlots, i - 1) : FEpithDividerResize())
 			];
 		}
 
@@ -295,7 +298,8 @@ TSharedPtr<SWidget> FEpithWindowElement_HorizontalGroup::Draw(const FEpithDrawCo
 			Context.Designer->MakeAddButton(LOCTEXT("HorizontalGroup_Add", "Add Slot to Horizontal Group"), [SlotsPtr = &MutableSlots]()
 			{
 				return &SlotsPtr->AddDefaulted_GetRef().Child;
-			})
+			},
+			FEpithInsertPosition{ &MutableSlots, MutableSlots.Num() })
 		];
 	}
 

@@ -90,8 +90,8 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 			continue;
 		}
 
-		// Designer: a divider between this slot and the previous one, which inserts a new slot there when clicked
-		if (Context.IsDesigning() && i > 0)
+		// Designer: a divider above this slot, which inserts a new slot there when clicked (an element dragged onto it moves there)
+		if (Context.IsDesigning())
 		{
 			Box->AddSlot()
 			.AutoHeight()
@@ -99,7 +99,8 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 				Context.Designer->MakeInsertDivider(true, LOCTEXT("VerticalGroup_Insert", "Insert Slot into Vertical Group"), [SlotsPtr = &MutableSlots, i]()
 				{
 					return &SlotsPtr->InsertDefaulted_GetRef(i).Child;
-				})
+				},
+				FEpithInsertPosition{ &MutableSlots, i })
 			];
 		}
 
@@ -127,7 +128,8 @@ TSharedPtr<SWidget> FEpithWindowElement_VerticalGroup::Draw(const FEpithDrawCont
 			Context.Designer->MakeAddButton(LOCTEXT("VerticalGroup_Add", "Add Slot to Vertical Group"), [SlotsPtr = &MutableSlots]()
 			{
 				return &SlotsPtr->AddDefaulted_GetRef().Child;
-			})
+			},
+			FEpithInsertPosition{ &MutableSlots, MutableSlots.Num() })
 		];
 	}
 

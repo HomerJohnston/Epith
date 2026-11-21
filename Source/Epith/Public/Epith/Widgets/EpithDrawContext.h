@@ -73,6 +73,19 @@ class FEpithColumnLayout;
 /** Makes a new slot in a group (at its end, or at a position) and returns where its element goes. */
 using FEpithMakeSlot = TFunction<TInstancedStruct<FEpithWindowElement>*()>;
 
+/**
+ * Where a "+" button or insert divider puts its new slot: which group's slot array, and before which slot (Num = at the end).
+ * An element dragged there from the same group is moved within the group (reordered) rather than into a new slot.
+ */
+struct FEpithInsertPosition
+{
+	const void* GroupId = nullptr;
+	int32 Index = INDEX_NONE;
+
+	/** Whether the group's slots can hold a Divider (only Vertical and Horizontal Groups' can). */
+	bool bAllowsDivider = true;
+};
+
 /** Dragging an insert divider sideways to move the boundary between the two slots either side of it (Horizontal Group). */
 struct FEpithDividerResize
 {
@@ -111,7 +124,7 @@ public:
 	 * A "+" icon button that runs AddSlot in a transaction, e.g. at the end of a group. Label is its tooltip.
 	 * An element dragged onto it moves into the new slot AddSlot makes.
 	 */
-	virtual TSharedRef<SWidget> MakeAddButton(const FText& Label, FEpithMakeSlot AddSlot) = 0;
+	virtual TSharedRef<SWidget> MakeAddButton(const FText& Label, FEpithMakeSlot AddSlot, const FEpithInsertPosition& Position = FEpithInsertPosition()) = 0;
 
 	/** A dropdown for picking a property path on the panel's target class. OnPicked runs in a transaction. */
 	virtual TSharedRef<SWidget> MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked) = 0;
@@ -122,7 +135,7 @@ public:
 	 * An element dragged onto it moves into the new slot InsertSlot makes. With Resize set (a vertical line), dragging it
 	 * sideways resizes the slots either side instead.
 	 */
-	virtual TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot, const FEpithDividerResize& Resize = FEpithDividerResize()) = 0;
+	virtual TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot, const FEpithInsertPosition& Position = FEpithInsertPosition(), const FEpithDividerResize& Resize = FEpithDividerResize()) = 0;
 
 	/** A "Pick control..." dropdown listing every special control type (subclasses of FEpithSpecialControl). */
 	virtual TSharedRef<SWidget> MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked) = 0;

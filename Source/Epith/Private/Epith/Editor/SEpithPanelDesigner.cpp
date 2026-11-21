@@ -440,8 +440,10 @@ private:
 // ------------------------------------------------------------------------------------------------
 
 /**
- * Dragging a slot: to another position in its group (dropped among its group's slots), or its element to a "+" button or insert
- * divider anywhere in the panel (moved into the new slot there).
+ * Dragging a slot's element:
+ * - onto another element (or an empty slot) anywhere in the panel: the two swap places;
+ * - onto a "+" button or insert divider of its own group: the slot moves there (reordered);
+ * - onto a "+" button or insert divider of another group: the element moves into the new slot there (its old slot stays, empty).
  */
 class FEpithSlotDragDrop : public FDecoratedDragDropOp
 {
@@ -453,8 +455,17 @@ public:
 
 	int32 Index = INDEX_NONE;
 
-	/** The slot whose element is being dragged, for moving it elsewhere; null for an empty slot. */
+	/** Moves the slot within its group (FEpithSlotActions::MoveSlot); unset if it can't be reordered. */
+	TFunction<void(int32 From, int32 InsertBefore)> MoveSlot;
+
+	/** The slot being dragged (its element may be empty). */
 	TInstancedStruct<FEpithWindowElement>* SourceSlot = nullptr;
+
+	/** The slots the dragged slot sits inside: it can't swap with any of them (that would put a group inside itself). */
+	TArray<const void*> SourceAncestors;
+
+	/** Whether the dragged slot can hold a Divider, i.e. whether a Divider can swap into its place. */
+	bool bSourceAllowsDivider = false;
 
 	static TSharedRef<FEpithSlotDragDrop> New(const void* InGroupId, int32 InIndex, TInstancedStruct<FEpithWindowElement>* InSourceSlot, const FText& Label)
 	{
@@ -470,26 +481,33 @@ public:
 	}
 };
 
-/** The grip to the left of a slot: drag it to move the slot within its group. */
+/** The grip to the left of a slot: drag it onto another element to swap them, or onto a "+" button or divider to move it there. */
 class SEpithSlotDragHandle : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SEpithSlotDragHandle) {}
 		SLATE_ARGUMENT(const void*, GroupId)
 		SLATE_ARGUMENT(int32, Index)
+		SLATE_ARGUMENT(TFunction<void(int32, int32)>, MoveSlot)
 		SLATE_ARGUMENT(FText, Label)
 		/** The group the slot is in (e.g. "Vertical Group"), for the tooltip */
 		SLATE_ARGUMENT(FText, ParentName)
-		/** The slot's element, to move elsewhere; null for an empty slot */
+		/** The slot being dragged */
 		SLATE_ARGUMENT(TInstancedStruct<FEpithWindowElement>*, SourceSlot)
+		/** The slots it sits inside */
+		SLATE_ARGUMENT(TArray<const void*>, SourceAncestors)
+		SLATE_ARGUMENT(bool, bSourceAllowsDivider)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs)
 	{
 		GroupId = InArgs._GroupId;
 		Index = InArgs._Index;
+		MoveSlot = InArgs._MoveSlot;
 		Label = InArgs._Label;
 		SourceSlot = InArgs._SourceSlot;
+		SourceAncestors = InArgs._SourceAncestors;
+		bSourceAllowsDivider = InArgs._bSourceAllowsDivider;
 
 		SetCursor(EMouseCursor::GrabHand);
 		SetToolTipText(InArgs._ParentName.IsEmpty()
@@ -523,33 +541,63 @@ public:
 
 	virtual FReply OnDragDetected(const FGeometry& MyGeometry, const FPointerEvent& MouseEvent) override
 	{
-		return FReply::Handled().BeginDragDrop(FEpithSlotDragDrop::New(GroupId, Index, SourceSlot, Label));
+		TSharedRef<FEpithSlotDragDrop> Operation = FEpithSlotDragDrop::New(GroupId, Index, SourceSlot, Label);
+		Operation->MoveSlot = MoveSlot;
+		Operation->SourceAncestors = SourceAncestors;
+		Operation->bSourceAllowsDivider = bSourceAllowsDivider;
+
+		return FReply::Handled().BeginDragDrop(Operation);
 	}
 
 private:
 	const void* GroupId = nullptr;
 	int32 Index = INDEX_NONE;
+	TFunction<void(int32, int32)> MoveSlot;
 	FText Label;
 	TInstancedStruct<FEpithWindowElement>* SourceSlot = nullptr;
+	TArray<const void*> SourceAncestors;
+	bool bSourceAllowsDivider = false;
 };
 
+namespace EpithDesigner
+{
+	/**
+	 * The drop target the current drag is over (the innermost one that took the drag-over). Drop targets are nested (an element
+	 * inside a group inside another), and moving into an inner one doesn't send the outer one a drag-leave: only the one named
+	 * here draws its highlight.
+	 */
+	static TWeakPtr<SWidget> HoveredDropTarget;
+
+	static bool IsDivider(const TInstancedStruct<FEpithWindowElement>* Slot)
+	{
+		return Slot && Slot->GetScriptStruct() == FEpithWindowElement_Divider::StaticStruct();
+	}
+}
+
 /**
- * Around a "+" button or insert divider: an element dragged onto it is moved into the new slot it makes. Refused for the element
- * the button sits inside (a group dropped into itself, or into something inside it), whose slots are the button's Ancestors.
+ * Around a "+" button or insert divider. A slot of the same group dragged onto it moves there (OnReorder); an element from
+ * anywhere else moves into the new slot it makes (OnDropElement). Refused for the element the button sits inside (a group
+ * dropped into itself, or into something inside it), whose slots are the button's Ancestors, and for a Divider where the group
+ * can't hold one.
  */
 class SEpithMoveDropTarget : public SCompoundWidget
 {
 public:
 	SLATE_BEGIN_ARGS(SEpithMoveDropTarget) {}
 		SLATE_ARGUMENT(TArray<const void*>, Ancestors)
+		SLATE_ARGUMENT(FEpithInsertPosition, Position)
 		SLATE_ARGUMENT(TFunction<void(TInstancedStruct<FEpithWindowElement>*)>, OnDropElement)
+		/** (From, InsertBefore): the dragged slot's index in this group, and this button's position */
+		SLATE_ARGUMENT(TFunction<void(TFunction<void(int32, int32)>, int32, int32)>, OnReorder)
 		SLATE_DEFAULT_SLOT(FArguments, Content)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs)
 	{
 		Ancestors = InArgs._Ancestors;
+		Position = InArgs._Position;
 		OnDropElement = InArgs._OnDropElement;
+		OnReorder = InArgs._OnReorder;
 
 		ChildSlot
 		[
@@ -557,29 +605,12 @@ public:
 		];
 	}
 
-	virtual void OnDragEnter(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
-	{
-		TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>();
-
-		if (!Operation.IsValid() || !Operation->SourceSlot)
-		{
-			return;
-		}
-
-		if (CanTake(*Operation))
-		{
-			bDragOver = true;
-			Operation->SetToolTip(FText::Format(LOCTEXT("MoveDrop_Here", "Move {0} here"), Operation->GetDefaultHoverText()), FAppStyle::GetBrush("Graph.ConnectorFeedback.OK"));
-		}
-		else
-		{
-			Operation->SetToolTip(LOCTEXT("MoveDrop_IntoItself", "Can't move an element into itself"), FAppStyle::GetBrush("Graph.ConnectorFeedback.Error"));
-		}
-	}
-
 	virtual void OnDragLeave(const FDragDropEvent& DragDropEvent) override
 	{
-		bDragOver = false;
+		if (EpithDesigner::HoveredDropTarget.Pin().Get() == this)
+		{
+			EpithDesigner::HoveredDropTarget.Reset();
+		}
 
 		if (TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>())
 		{
@@ -590,12 +621,37 @@ public:
 	virtual FReply OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
 	{
 		TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>();
-		return Operation.IsValid() && Operation->SourceSlot ? FReply::Handled() : FReply::Unhandled();
+
+		if (!Operation.IsValid() || !Operation->SourceSlot)
+		{
+			return FReply::Unhandled();
+		}
+
+		EpithDesigner::HoveredDropTarget = AsShared();
+
+		FText Refusal;
+
+		if (CanTake(*Operation, Refusal))
+		{
+			const FText Description = IsReorder(*Operation)
+				? FText::Format(LOCTEXT("MoveDrop_Reorder", "Move {0} here"), Operation->GetDefaultHoverText())
+				: FText::Format(LOCTEXT("MoveDrop_Here", "Move {0} into a new slot here"), Operation->GetDefaultHoverText());
+
+			Operation->SetToolTip(Description, FAppStyle::GetBrush("Graph.ConnectorFeedback.OK"));
+			bCanTakeHovered = true;
+		}
+		else
+		{
+			Operation->SetToolTip(Refusal, FAppStyle::GetBrush("Graph.ConnectorFeedback.Error"));
+			bCanTakeHovered = false;
+		}
+
+		return FReply::Handled();
 	}
 
 	virtual FReply OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
 	{
-		bDragOver = false;
+		EpithDesigner::HoveredDropTarget.Reset();
 
 		TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>();
 
@@ -604,10 +660,23 @@ public:
 			return FReply::Unhandled();
 		}
 
-		// A refused drop is still handled, so it doesn't fall through to a slot around this button
-		if (CanTake(*Operation) && OnDropElement)
+		// A refused drop is still handled, so it doesn't fall through to an element around this button
+		FText Refusal;
+
+		if (CanTake(*Operation, Refusal))
 		{
-			OnDropElement(Operation->SourceSlot);
+			if (IsReorder(*Operation))
+			{
+				// Dropping a slot right where it already is changes nothing (and makes no undo step)
+				if (OnReorder && Position.Index != Operation->Index && Position.Index != Operation->Index + 1)
+				{
+					OnReorder(Operation->MoveSlot, Operation->Index, Position.Index);
+				}
+			}
+			else if (OnDropElement)
+			{
+				OnDropElement(Operation->SourceSlot);
+			}
 		}
 
 		return FReply::Handled();
@@ -617,13 +686,7 @@ public:
 	{
 		const int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 
-		// The drag ended somewhere else (or was cancelled) without a drag-leave reaching us
-		if (bDragOver && !FSlateApplication::Get().IsDragDropping())
-		{
-			bDragOver = false;
-		}
-
-		if (!bDragOver)
+		if (!bCanTakeHovered || !FSlateApplication::Get().IsDragDropping() || EpithDesigner::HoveredDropTarget.Pin().Get() != this)
 		{
 			return MaxLayer;
 		}
@@ -635,37 +698,76 @@ public:
 	}
 
 private:
-	bool CanTake(const FEpithSlotDragDrop& Operation) const
+	/** A slot of this button's own group: moved within the group rather than into a new slot. */
+	bool IsReorder(const FEpithSlotDragDrop& Operation) const
 	{
-		return !Ancestors.Contains(Operation.SourceSlot);
+		return Position.GroupId && Operation.GroupId == Position.GroupId && Operation.MoveSlot;
+	}
+
+	bool CanTake(const FEpithSlotDragDrop& Operation, FText& OutRefusal) const
+	{
+		if (IsReorder(Operation))
+		{
+			return true;
+		}
+
+		if (!Operation.SourceSlot->IsValid())
+		{
+			OutRefusal = LOCTEXT("MoveDrop_Empty", "An empty slot can only be moved within its own group");
+			return false;
+		}
+
+		if (Ancestors.Contains(Operation.SourceSlot))
+		{
+			OutRefusal = LOCTEXT("MoveDrop_IntoItself", "Can't move an element into itself");
+			return false;
+		}
+
+		if (!Position.bAllowsDivider && EpithDesigner::IsDivider(Operation.SourceSlot))
+		{
+			OutRefusal = LOCTEXT("MoveDrop_Divider", "A Divider can only go in a Vertical or Horizontal Group");
+			return false;
+		}
+
+		return true;
 	}
 
 	TArray<const void*> Ancestors;
+	FEpithInsertPosition Position;
 	TFunction<void(TInstancedStruct<FEpithWindowElement>*)> OnDropElement;
-	mutable bool bDragOver = false;
+	TFunction<void(TFunction<void(int32, int32)>, int32, int32)> OnReorder;
+
+	/** Whether the drag last over this button can be dropped here */
+	bool bCanTakeHovered = false;
 };
 
 /**
- * Wraps a slot in the designer so another slot of the same group can be dropped before or after it, with a line showing where.
- * Drags from other groups pass through, so they can land on an enclosing slot of their own group instead.
+ * Around every slot in the designer (filled or empty): another slot's element dropped onto it swaps places with this one's.
+ * The innermost slot under the cursor decides, so a drop onto an element inside a group swaps with that element, not the group.
+ * Refused for the dragged slot itself, for a slot it sits inside or that sits inside it (a group would end up inside itself),
+ * and where a Divider would end up outside a Vertical or Horizontal Group.
  */
-class SEpithSlotDropTarget : public SCompoundWidget
+class SEpithSwapDropTarget : public SCompoundWidget
 {
 public:
-	SLATE_BEGIN_ARGS(SEpithSlotDropTarget) {}
-		SLATE_ARGUMENT(const void*, GroupId)
-		SLATE_ARGUMENT(int32, Index)
-		SLATE_ARGUMENT(bool, bHorizontal)
-		SLATE_ARGUMENT(TFunction<void(int32, int32)>, OnMove)
+	SLATE_BEGIN_ARGS(SEpithSwapDropTarget)
+		: _bAllowDivider(false)
+		{}
+		SLATE_ARGUMENT(TInstancedStruct<FEpithWindowElement>*, TargetSlot)
+		/** The slots this one sits inside */
+		SLATE_ARGUMENT(TArray<const void*>, Ancestors)
+		/** Whether this slot can hold a Divider */
+		SLATE_ARGUMENT(bool, bAllowDivider)
+		SLATE_ARGUMENT(TFunction<void(TInstancedStruct<FEpithWindowElement>*)>, OnSwap)
 		SLATE_DEFAULT_SLOT(FArguments, Content)
 	SLATE_END_ARGS()
 
 	void Construct(const FArguments& InArgs)
 	{
-		GroupId = InArgs._GroupId;
-		Index = InArgs._Index;
-		bHorizontal = InArgs._bHorizontal;
-		OnMove = InArgs._OnMove;
+		TargetSlot = InArgs._TargetSlot;
+		Ancestors = InArgs._Ancestors;
+		bAllowDivider = InArgs._bAllowDivider;
+		OnSwap = InArgs._OnSwap;
 
 		ChildSlot
 		[
@@ -673,47 +775,74 @@ public:
 		];
 	}
 
+	virtual void OnDragLeave(const FDragDropEvent& DragDropEvent) override
+	{
+		if (EpithDesigner::HoveredDropTarget.Pin().Get() == this)
+		{
+			EpithDesigner::HoveredDropTarget.Reset();
+
+			if (TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>())
+			{
+				Operation->ResetToDefaultToolTip();
+			}
+		}
+	}
+
 	virtual FReply OnDragOver(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
 	{
 		TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>();
 
-		if (!Operation.IsValid() || Operation->GroupId != GroupId)
+		if (!Operation.IsValid() || !Operation->SourceSlot)
 		{
-			bShowDropLine = false;
 			return FReply::Unhandled();
 		}
 
-		// Before or after this slot, by which half of it the cursor is over
-		const FVector2D Local = MyGeometry.AbsoluteToLocal(DragDropEvent.GetScreenSpacePosition());
-		const FVector2D Size = MyGeometry.GetLocalSize();
-		bDropAfter = bHorizontal ? Local.X > Size.X * 0.5f : Local.Y > Size.Y * 0.5f;
-		bShowDropLine = true;
+		EpithDesigner::HoveredDropTarget = AsShared();
 
+		// Over the dragged slot itself: nothing to do here
+		if (Operation->SourceSlot == TargetSlot)
+		{
+			bCanTakeHovered = false;
+			Operation->ResetToDefaultToolTip();
+			return FReply::Handled();
+		}
+
+		FText Refusal;
+		bCanTakeHovered = CanTake(*Operation, Refusal);
+
+		if (bCanTakeHovered)
+		{
+			const FText Description = TargetSlot->IsValid()
+				? FText::Format(LOCTEXT("SwapDrop_Swap", "Swap {0} with {1}"), Operation->GetDefaultHoverText(), TargetSlot->GetScriptStruct()->GetDisplayNameText())
+				: FText::Format(LOCTEXT("SwapDrop_Empty", "Move {0} here"), Operation->GetDefaultHoverText());
+
+			Operation->SetToolTip(Description, FAppStyle::GetBrush("Graph.ConnectorFeedback.OK"));
+		}
+		else
+		{
+			Operation->SetToolTip(Refusal, FAppStyle::GetBrush("Graph.ConnectorFeedback.Error"));
+		}
+
+		// Handled either way: the innermost slot under the cursor decides, rather than passing a refused drop to a group around it
 		return FReply::Handled();
-	}
-
-	virtual void OnDragLeave(const FDragDropEvent& DragDropEvent) override
-	{
-		bShowDropLine = false;
 	}
 
 	virtual FReply OnDrop(const FGeometry& MyGeometry, const FDragDropEvent& DragDropEvent) override
 	{
-		bShowDropLine = false;
+		EpithDesigner::HoveredDropTarget.Reset();
 
 		TSharedPtr<FEpithSlotDragDrop> Operation = DragDropEvent.GetOperationAs<FEpithSlotDragDrop>();
 
-		if (!Operation.IsValid() || Operation->GroupId != GroupId)
+		if (!Operation.IsValid() || !Operation->SourceSlot)
 		{
 			return FReply::Unhandled();
 		}
 
-		const int32 InsertBefore = bDropAfter ? Index + 1 : Index;
+		FText Refusal;
 
-		// Dropping a slot right where it already is changes nothing (and makes no undo step)
-		if (OnMove && InsertBefore != Operation->Index && InsertBefore != Operation->Index + 1)
+		if (Operation->SourceSlot != TargetSlot && CanTake(*Operation, Refusal) && OnSwap)
 		{
-			OnMove(Operation->Index, InsertBefore);
+			OnSwap(Operation->SourceSlot);
 		}
 
 		return FReply::Handled();
@@ -721,46 +850,68 @@ public:
 
 	virtual int32 OnPaint(const FPaintArgs& Args, const FGeometry& AllottedGeometry, const FSlateRect& MyCullingRect, FSlateWindowElementList& OutDrawElements, int32 LayerId, const FWidgetStyle& InWidgetStyle, bool bParentEnabled) const override
 	{
-		int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
+		const int32 MaxLayer = SCompoundWidget::OnPaint(Args, AllottedGeometry, MyCullingRect, OutDrawElements, LayerId, InWidgetStyle, bParentEnabled);
 
-		// The drag ended somewhere else (or was cancelled) without a drag-leave reaching us
-		if (bShowDropLine && !FSlateApplication::Get().IsDragDropping())
+		if (!bCanTakeHovered || !FSlateApplication::Get().IsDragDropping() || EpithDesigner::HoveredDropTarget.Pin().Get() != this)
 		{
-			bShowDropLine = false;
+			return MaxLayer;
 		}
 
-		if (bShowDropLine)
+		// A tinted box with a 2px outline in the selection color: this is what the dragged element will swap with
+		const FLinearColor Color = FStyleColors::Select.GetColor(InWidgetStyle);
+		const FSlateBrush* Brush = FAppStyle::GetBrush("WhiteBrush");
+		const FVector2f Size = FVector2f(AllottedGeometry.GetLocalSize());
+
+		FSlateDrawElement::MakeBox(OutDrawElements, MaxLayer + 1, AllottedGeometry.ToPaintGeometry(), Brush, ESlateDrawEffect::None, Color.CopyWithNewOpacity(0.15f));
+
+		auto DrawRect = [&](float X, float Y, float W, float H)
 		{
-			constexpr float Thickness = 2.0f;
-			const FVector2f Size = FVector2f(AllottedGeometry.GetLocalSize());
+			FSlateDrawElement::MakeBox(OutDrawElements, MaxLayer + 1, AllottedGeometry.ToPaintGeometry(FVector2f(W, H), FSlateLayoutTransform(FVector2f(X, Y))), Brush, ESlateDrawEffect::None, Color);
+		};
 
-			const FVector2f LineSize = bHorizontal ? FVector2f(Thickness, Size.Y) : FVector2f(Size.X, Thickness);
-			const FVector2f LinePosition = bHorizontal
-				? FVector2f(bDropAfter ? Size.X - Thickness : 0.0f, 0.0f)
-				: FVector2f(0.0f, bDropAfter ? Size.Y - Thickness : 0.0f);
+		DrawRect(0, 0, Size.X, 2);
+		DrawRect(0, Size.Y - 2, Size.X, 2);
+		DrawRect(0, 0, 2, Size.Y);
+		DrawRect(Size.X - 2, 0, 2, Size.Y);
 
-			FSlateDrawElement::MakeBox(
-				OutDrawElements,
-				MaxLayer + 1,
-				AllottedGeometry.ToPaintGeometry(LineSize, FSlateLayoutTransform(LinePosition)),
-				FAppStyle::GetBrush("WhiteBrush"),
-				ESlateDrawEffect::None,
-				FStyleColors::Select.GetColor(InWidgetStyle));
-
-			MaxLayer += 1;
-		}
-
-		return MaxLayer;
+		return MaxLayer + 1;
 	}
 
 private:
-	const void* GroupId = nullptr;
-	int32 Index = INDEX_NONE;
-	bool bHorizontal = false;
-	TFunction<void(int32, int32)> OnMove;
+	bool CanTake(const FEpithSlotDragDrop& Operation, FText& OutRefusal) const
+	{
+		const TInstancedStruct<FEpithWindowElement>* Source = Operation.SourceSlot;
 
-	mutable bool bShowDropLine = false;
-	bool bDropAfter = false;
+		// Swapping an empty slot with another empty slot changes nothing
+		if (!Source->IsValid() && !TargetSlot->IsValid())
+		{
+			OutRefusal = LOCTEXT("SwapDrop_BothEmpty", "Both slots are empty");
+			return false;
+		}
+
+		// This slot is inside the dragged one, or the dragged one is inside this one
+		if (Ancestors.Contains(Source) || Operation.SourceAncestors.Contains(TargetSlot))
+		{
+			OutRefusal = LOCTEXT("SwapDrop_IntoItself", "Can't swap an element with one inside it");
+			return false;
+		}
+
+		if ((EpithDesigner::IsDivider(Source) && !bAllowDivider) || (EpithDesigner::IsDivider(TargetSlot) && !Operation.bSourceAllowsDivider))
+		{
+			OutRefusal = LOCTEXT("SwapDrop_Divider", "A Divider can only go in a Vertical or Horizontal Group");
+			return false;
+		}
+
+		return true;
+	}
+
+	TInstancedStruct<FEpithWindowElement>* TargetSlot = nullptr;
+	TArray<const void*> Ancestors;
+	bool bAllowDivider = false;
+	TFunction<void(TInstancedStruct<FEpithWindowElement>*)> OnSwap;
+
+	/** Whether the drag last over this slot can be dropped here */
+	bool bCanTakeHovered = false;
 };
 
 /**
@@ -1929,7 +2080,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeEmptySlot(TInstancedStruct<FEpithWi
 			Frame
 		];
 
-	return WithDragHandle(DropTarget, Actions, LOCTEXT("DragLabel_Empty", "Empty Slot"), nullptr);
+	return WithDragHandle(WithSwapDropTarget(DropTarget, SlotPtr, Actions), Actions, LOCTEXT("DragLabel_Empty", "Empty Slot"), SlotPtr);
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWindowElement>& Slot, TSharedRef<SWidget> ElementWidget, const FEpithSlotActions& Actions)
@@ -1980,7 +2131,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::WrapElement(TInstancedStruct<FEpithWind
 		}
 	}
 
-	return WithDragHandle(Frame, Actions, DragLabel, SlotPtr);
+	return WithDragHandle(WithSwapDropTarget(Frame, SlotPtr, Actions), Actions, DragLabel, SlotPtr);
 }
 
 FText SEpithPanelDesigner::DescribeSlot(const TInstancedStruct<FEpithWindowElement>& Slot, const FEpithSlotActions& Actions) const
@@ -2079,14 +2230,13 @@ TSharedRef<SWidget> SEpithPanelDesigner::WithDragHandle(TSharedRef<SWidget> Cont
 	// The panel's root element has nowhere to go (everything else is inside it), so it gets no handle
 	UEpithPanelDefinition* PanelDefinition = Definition.Get();
 	const bool bIsRoot = PanelDefinition && Slot == &PanelDefinition->GetRootForEditing();
-	TInstancedStruct<FEpithWindowElement>* SourceSlot = Slot && Slot->IsValid() && !bIsRoot ? Slot : nullptr;
 
-	if (!bCanReorder && !SourceSlot)
+	if (!Slot || bIsRoot)
 	{
 		return Content;
 	}
 
-	TSharedRef<SWidget> WithHandle = SNew(SHorizontalBox)
+	return SNew(SHorizontalBox)
 		+ SHorizontalBox::Slot()
 		.AutoWidth()
 		.VAlign(VAlign_Center)
@@ -2095,38 +2245,64 @@ TSharedRef<SWidget> SEpithPanelDesigner::WithDragHandle(TSharedRef<SWidget> Cont
 			SNew(SEpithSlotDragHandle)
 			.GroupId(bCanReorder ? Actions.GroupId : nullptr)
 			.Index(Actions.Index)
+			.MoveSlot(bCanReorder ? Actions.MoveSlot : TFunction<void(int32, int32)>())
 			.Label(DragLabel)
 			.ParentName(Actions.ParentName)
-			.SourceSlot(SourceSlot)
+			.SourceSlot(Slot)
+			// The slots this one is drawn inside: right now (WrapElement and MakeEmptySlot run after the slot's own drawing)
+			.SourceAncestors(DrawStack)
+			// Only Vertical and Horizontal Group slots are reorderable, and only those can hold a Divider
+			.bSourceAllowsDivider(Actions.Reorder != EEpithSlotReorder::None)
 		]
 		+ SHorizontalBox::Slot()
 		.FillWidth(1.0f)
 		[
 			Content
 		];
+}
 
-	// Not in a Vertical or Horizontal Group (a Foldout's or a tab's element): no reordering, only moving to "+" buttons and dividers
-	if (!bCanReorder)
-	{
-		return WithHandle;
-	}
-
-	TFunction<void(int32, int32)> MoveSlot = Actions.MoveSlot;
-
-	return SNew(SEpithSlotDropTarget)
-		.GroupId(Actions.GroupId)
-		.Index(Actions.Index)
-		.bHorizontal(Actions.Reorder == EEpithSlotReorder::Horizontal)
-		.OnMove([this, MoveSlot](int32 From, int32 InsertBefore)
+TSharedRef<SWidget> SEpithPanelDesigner::WithSwapDropTarget(TSharedRef<SWidget> Content, TInstancedStruct<FEpithWindowElement>* Slot, const FEpithSlotActions& Actions)
+{
+	return SNew(SEpithSwapDropTarget)
+		.TargetSlot(Slot)
+		.Ancestors(DrawStack)
+		.bAllowDivider(Actions.Reorder != EEpithSlotReorder::None)
+		.OnSwap([this, Slot](TInstancedStruct<FEpithWindowElement>* Source)
 		{
-			Edit(LOCTEXT("MoveSlotTransaction", "Move Slot"), [MoveSlot, From, InsertBefore]()
-			{
-				MoveSlot(From, InsertBefore);
-			});
+			SwapSlots(Source, Slot);
 		})
 		[
-			WithHandle
+			Content
 		];
+}
+
+void SEpithPanelDesigner::SwapSlots(TInstancedStruct<FEpithWindowElement>* A, TInstancedStruct<FEpithWindowElement>* B)
+{
+	// Only slots drawn in the current layout (the layout may have been redrawn during the drag)
+	if (!A || !B || A == B || !DrawnSlots.Contains(A) || !DrawnSlots.Contains(B))
+	{
+		return;
+	}
+
+	const FText Description = B->IsValid() ? LOCTEXT("SwapElementsTransaction", "Swap Elements") : LOCTEXT("MoveElementTransaction", "Move Element");
+
+	Edit(Description, [A, B]()
+	{
+		// Neither slot moves in memory (nothing is added or removed), so the two can simply trade elements
+		TInstancedStruct<FEpithWindowElement> Temp = MoveTemp(*A);
+		*A = MoveTemp(*B);
+		*B = MoveTemp(Temp);
+	});
+
+	// The selection follows the element that was selected to its new slot
+	if (SelectedSlot == A)
+	{
+		SelectedSlot = B;
+	}
+	else if (SelectedSlot == B)
+	{
+		SelectedSlot = A;
+	}
 }
 
 void SEpithPanelDesigner::BeginSlot(const TInstancedStruct<FEpithWindowElement>& Slot)
@@ -2142,11 +2318,19 @@ void SEpithPanelDesigner::EndSlot()
 	}
 }
 
-TSharedRef<SWidget> SEpithPanelDesigner::WithMoveDropTarget(TSharedRef<SWidget> Button, FEpithMakeSlot MakeSlot)
+TSharedRef<SWidget> SEpithPanelDesigner::WithMoveDropTarget(TSharedRef<SWidget> Button, FEpithMakeSlot MakeSlot, const FEpithInsertPosition& Position)
 {
 	return SNew(SEpithMoveDropTarget)
 		// The slots this button sits inside, right now while it's being made: an element can't be moved into any of them
 		.Ancestors(DrawStack)
+		.Position(Position)
+		.OnReorder([this](TFunction<void(int32, int32)> MoveSlot, int32 From, int32 InsertBefore)
+		{
+			Edit(LOCTEXT("MoveSlotTransaction", "Move Slot"), [MoveSlot, From, InsertBefore]()
+			{
+				MoveSlot(From, InsertBefore);
+			});
+		})
 		.OnDropElement([this, MakeSlot](TInstancedStruct<FEpithWindowElement>* SourceSlot)
 		{
 			// Only a slot drawn in the current layout (the layout may have been redrawn during the drag)
@@ -2173,7 +2357,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::WithMoveDropTarget(TSharedRef<SWidget> 
 		];
 }
 
-TSharedRef<SWidget> SEpithPanelDesigner::MakeAddButton(const FText& Label, FEpithMakeSlot AddSlot)
+TSharedRef<SWidget> SEpithPanelDesigner::MakeAddButton(const FText& Label, FEpithMakeSlot AddSlot, const FEpithInsertPosition& Position)
 {
 	// A 24x24 button with a centered 16x16 "+" icon; the label is the tooltip
 	TSharedRef<SWidget> Button = SNew(SButton)
@@ -2204,7 +2388,8 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeAddButton(const FText& Label, FEpit
 		[
 			Button
 		],
-		AddSlot);
+		AddSlot,
+		Position);
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked)
@@ -2808,7 +2993,7 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakePanelWidthGrip()
 	return Grip;
 }
 
-TSharedRef<SWidget> SEpithPanelDesigner::MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot, const FEpithDividerResize& Resize)
+TSharedRef<SWidget> SEpithPanelDesigner::MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot, const FEpithInsertPosition& Position, const FEpithDividerResize& Resize)
 {
 	constexpr float ButtonThickness = 3.0f;
 
@@ -2850,7 +3035,8 @@ TSharedRef<SWidget> SEpithPanelDesigner::MakeInsertDivider(bool bRunsHorizontall
 		[
 			Grip
 		],
-		InsertSlot);
+		InsertSlot,
+		Position);
 }
 
 TSharedRef<SWidget> SEpithPanelDesigner::MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked)

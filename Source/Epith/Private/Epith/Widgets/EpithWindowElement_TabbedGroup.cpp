@@ -49,7 +49,9 @@ TSharedPtr<SWidget> FEpithWindowElement_TabbedGroup::Draw(const FEpithDrawContex
 			FEpithWindowElement_TabbedGroup_Slot& NewSlot = SlotsPtr->AddDefaulted_GetRef();
 			NewSlot.TabName = FString::Printf(TEXT("Tab %d"), SlotsPtr->Num());
 			return &NewSlot.Element;
-		});
+		},
+		// Tabs can't be reordered by dragging (no group id), and can't hold a Divider
+		FEpithInsertPosition{ nullptr, MutableSlots.Num(), false });
 	}
 
 	if (Panes.Num() > 0)

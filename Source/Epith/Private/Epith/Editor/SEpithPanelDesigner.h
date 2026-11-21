@@ -59,11 +59,11 @@ public:
 	// IEpithDesigner
 	TSharedRef<SWidget> MakeEmptySlot(TInstancedStruct<FEpithWindowElement>& Slot, const FEpithSlotActions& Actions) override;
 	TSharedRef<SWidget> WrapElement(TInstancedStruct<FEpithWindowElement>& Slot, TSharedRef<SWidget> ElementWidget, const FEpithSlotActions& Actions) override;
-	TSharedRef<SWidget> MakeAddButton(const FText& Label, FEpithMakeSlot AddSlot) override;
+	TSharedRef<SWidget> MakeAddButton(const FText& Label, FEpithMakeSlot AddSlot, const FEpithInsertPosition& Position) override;
 	TSharedRef<SWidget> MakePropertyPicker(FName CurrentPath, TFunction<void(FName)> OnPicked) override;
 	TSharedRef<SWidget> MakeColumnHandles(const TSharedRef<FEpithColumnLayout>& Columns) override;
 	TSharedRef<SWidget> MakeControlPicker(TFunction<void(const UScriptStruct*)> OnPicked) override;
-	TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot, const FEpithDividerResize& Resize) override;
+	TSharedRef<SWidget> MakeInsertDivider(bool bRunsHorizontally, const FText& ToolTip, FEpithMakeSlot InsertSlot, const FEpithInsertPosition& Position, const FEpithDividerResize& Resize) override;
 	void BeginSlot(const TInstancedStruct<FEpithWindowElement>& Slot) override;
 	void EndSlot() override;
 
@@ -93,15 +93,23 @@ protected:
 	/** Menu for an element: nest in a container, clear, remove from group, move up/down. */
 	TSharedRef<SWidget> MakeElementMenu(TInstancedStruct<FEpithWindowElement>* Slot, const FEpithSlotActions& Actions);
 
-	/** Puts a grab handle to the left of Content and makes it a drop target, if the slot's group can be reordered by dragging. */
 	/**
-	 * Adds the grab handle. Slot: the element it drags to a "+" button or insert divider anywhere in the panel (null for an empty
-	 * slot, which can only be reordered in its group).
+	 * Adds the grab handle (except for the root). Slot: the slot it drags, onto another element (a swap), or onto a "+" button or
+	 * insert divider (a move).
 	 */
 	TSharedRef<SWidget> WithDragHandle(TSharedRef<SWidget> Content, const FEpithSlotActions& Actions, const FText& DragLabel, TInstancedStruct<FEpithWindowElement>* Slot);
 
-	/** Wraps a "+" button or insert divider so an element dragged onto it moves into the slot MakeSlot makes. */
-	TSharedRef<SWidget> WithMoveDropTarget(TSharedRef<SWidget> Button, FEpithMakeSlot MakeSlot);
+	/**
+	 * Wraps a "+" button or insert divider: a slot of the same group (Position) dragged onto it moves there; an element from
+	 * anywhere else moves into the slot MakeSlot makes.
+	 */
+	TSharedRef<SWidget> WithMoveDropTarget(TSharedRef<SWidget> Button, FEpithMakeSlot MakeSlot, const FEpithInsertPosition& Position);
+
+	/** Wraps a slot (filled or empty) so another slot's element dropped onto it swaps places with this one's. */
+	TSharedRef<SWidget> WithSwapDropTarget(TSharedRef<SWidget> Content, TInstancedStruct<FEpithWindowElement>* Slot, const FEpithSlotActions& Actions);
+
+	/** Swaps the elements in two slots of the current layout, in one transaction. */
+	void SwapSlots(TInstancedStruct<FEpithWindowElement>* A, TInstancedStruct<FEpithWindowElement>* B);
 
 	/** Menu for an empty slot: pick an element type. Dividers are only offered in Vertical and Horizontal Group slots. */
 	TSharedRef<SWidget> MakeElementTypeMenu(TInstancedStruct<FEpithWindowElement>* Slot, bool bAllowDivider);
