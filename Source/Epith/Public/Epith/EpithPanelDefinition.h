@@ -42,9 +42,12 @@ protected:
 	UPROPERTY(EditDefaultsOnly, Category = "Epith|Appearance", meta = (ClampMin = 100, ClampMax = 2000, UIMin = 200, UIMax = 800))
 	float Width = 360;
 
-	/** Clicking this section's header in the viewport collapses or expands it (it starts expanded). */
+	/**
+	 * Normally, clicking this section's header in the viewport collapses or expands it (it starts expanded). Turn this on to
+	 * keep the section always open, with a plain header.
+	 */
 	UPROPERTY(EditDefaultsOnly, Category = "Epith|Appearance")
-	bool bFoldable = false;
+	bool bNotFoldable = false;
 
 	UPROPERTY(EditDefaultsOnly, Category = "Epith", meta = (ShowOnlyInnerProperties, ExcludeBaseStruct))
 	TInstancedStruct<FEpithWindowElement> Root;
@@ -75,7 +78,7 @@ public:
 
 	bool IsFoldable() const
 	{
-		return bFoldable;
+		return !bNotFoldable;
 	}
 
 	float GetWidth() const
