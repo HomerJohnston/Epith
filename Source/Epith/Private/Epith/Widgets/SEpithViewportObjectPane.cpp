@@ -9,6 +9,8 @@
 #include "Epith/Widgets/SEpithViewportObjectPaneHeader.h"
 #include "Styling/SlateIconFinder.h"
 
+#include "Containers/Ticker.h"
+
 #define LOCTEXT_NAMESPACE "Epith"
 
 namespace EpithViewportObjectPane
@@ -65,9 +67,11 @@ void SEpithViewportObjectPane::OnObjectsReinstanced(const TMap<UObject*, UObject
 		bNeedsRebuild = true;
 	}
 
+	// Rebuilt right away, so the panel never shows a frame of rows for the object that's gone (they'd collapse or change
+	// size for that frame: a flicker). Build() keeps the old row generator alive until it's safe to release.
 	if (bNeedsRebuild)
 	{
-		RequestFullRebuild();
+		Build();
 	}
 }
 
@@ -76,29 +80,8 @@ void SEpithViewportObjectPane::OnObjectPropertyChanged(UObject* Object, FPropert
 	// Only rebuild when the layout changes. Rebuilding on changes to the target would tear down the widget being edited.
 	if (Object && Object == PanelDefinition.Get())
 	{
-		RequestFullRebuild();
+		Build();
 	}
-}
-
-void SEpithViewportObjectPane::RequestFullRebuild()
-{
-	if (bFullRebuildPending)
-	{
-		return;
-	}
-
-	bFullRebuildPending = true;
-
-	RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SEpithViewportObjectPane::HandleDeferredFullRebuild));
-}
-
-EActiveTimerReturnType SEpithViewportObjectPane::HandleDeferredFullRebuild(double InCurrentTime, float InDeltaTime)
-{
-	bFullRebuildPending = false;
-
-	Build();
-
-	return EActiveTimerReturnType::Stop;
 }
 
 void SEpithViewportObjectPane::RequestRebuild()
@@ -116,6 +99,12 @@ void SEpithViewportObjectPane::RequestRebuild()
 
 EActiveTimerReturnType SEpithViewportObjectPane::HandleDeferredRebuild(double InCurrentTime, float InDeltaTime)
 {
+	// A full Build() since the request already redrew everything
+	if (!bRebuildPending)
+	{
+		return EActiveTimerReturnType::Stop;
+	}
+
 	bRebuildPending = false;
 
 	RapidRebuildCount = (InCurrentTime - LastAutoRebuildTime < 0.25) ? RapidRebuildCount + 1 : 0;
@@ -151,7 +140,24 @@ EActiveTimerReturnType SEpithViewportObjectPane::HandleDeferredRebuild(double In
 void SEpithViewportObjectPane::Build()
 {
 	// Always start from fresh property rows: a row's widgets can only be shown once, and the old ones belong to the tree we're replacing.
-	PropertyData.Reset();
+	if (PropertyData.IsValid())
+	{
+		// The old rows aren't released here but on the next core tick. Build() can run from inside the old row generator's own
+		// tick (emptying an array reruns the actor's construction scripts, which replaces its components, which lands here),
+		// and a generator mustn't be destroyed while it ticks. Creating the new one now is fine: the engine queues it.
+		PropertyData->OnStructureChanged.RemoveAll(this);
+
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Retired = MoveTemp(PropertyData)](float)
+		{
+			// One-shot: the ticker drops this delegate, and the old rows with it
+			return false;
+		}));
+
+		PropertyData.Reset();
+	}
+
+	// Any redraw the old rows asked for is covered by this one
+	bRebuildPending = false;
 
 	if (Target.IsValid())
 	{
