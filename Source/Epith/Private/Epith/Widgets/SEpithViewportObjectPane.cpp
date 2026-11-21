@@ -7,9 +7,8 @@
 #include "Epith/Widgets/EpithDrawContext.h"
 #include "Epith/Widgets/EpithWindowElement.h"
 #include "Epith/Widgets/SEpithViewportObjectPaneHeader.h"
-#include "Styling/SlateIconFinder.h"
-
 #include "Containers/Ticker.h"
+#include "Styling/SlateIconFinder.h"
 
 #define LOCTEXT_NAMESPACE "Epith"
 
@@ -22,6 +21,27 @@ namespace EpithViewportObjectPane
 	static TSet<FString> CollapsedSections;
 
 	/** The panel definition and the target's name: the same section of the same actor (or component) after a rebuild. */
+	/**
+	 * Releases a pane's property rows on the next core tick instead of right now. A pane can be rebuilt or destroyed from
+	 * inside its own row generator's tick (emptying an array reruns the actor's construction scripts, which replaces its
+	 * components, which lands here), and a generator mustn't be destroyed while it ticks.
+	 */
+	static void ReleaseLater(TSharedPtr<FEpithPropertyDataContainer>& PropertyData)
+	{
+		if (!PropertyData.IsValid())
+		{
+			return;
+		}
+
+		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Retired = MoveTemp(PropertyData)](float)
+		{
+			// One-shot: the ticker drops this delegate, and the old rows with it
+			return false;
+		}));
+
+		PropertyData.Reset();
+	}
+
 	static FString GetSectionKey(const UEpithPanelDefinition* Definition, const UObject* Target)
 	{
 		return FString::Printf(TEXT("%s|%s"), Definition ? *Definition->GetPathName() : TEXT(""), Target ? *Target->GetName() : TEXT(""));
@@ -48,6 +68,9 @@ SEpithViewportObjectPane::~SEpithViewportObjectPane()
 {
 	FCoreUObjectDelegates::OnObjectsReplaced.RemoveAll(this);
 	FCoreUObjectDelegates::OnObjectPropertyChanged.RemoveAll(this);
+
+	// The panel can throw its sections away at any moment (e.g. when its actor is replaced)
+	EpithViewportObjectPane::ReleaseLater(PropertyData);
 }
 
 void SEpithViewportObjectPane::OnObjectsReinstanced(const TMap<UObject*, UObject*>& ReplacementMap)
@@ -142,18 +165,9 @@ void SEpithViewportObjectPane::Build()
 	// Always start from fresh property rows: a row's widgets can only be shown once, and the old ones belong to the tree we're replacing.
 	if (PropertyData.IsValid())
 	{
-		// The old rows aren't released here but on the next core tick. Build() can run from inside the old row generator's own
-		// tick (emptying an array reruns the actor's construction scripts, which replaces its components, which lands here),
-		// and a generator mustn't be destroyed while it ticks. Creating the new one now is fine: the engine queues it.
+		// Released later, not here (see ReleaseLater). Creating the new rows now is fine: the engine queues a new generator.
 		PropertyData->OnStructureChanged.RemoveAll(this);
-
-		FTSTicker::GetCoreTicker().AddTicker(FTickerDelegate::CreateLambda([Retired = MoveTemp(PropertyData)](float)
-		{
-			// One-shot: the ticker drops this delegate, and the old rows with it
-			return false;
-		}));
-
-		PropertyData.Reset();
+		EpithViewportObjectPane::ReleaseLater(PropertyData);
 	}
 
 	// Any redraw the old rows asked for is covered by this one

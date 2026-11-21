@@ -94,8 +94,8 @@ protected:
 	/** (Re)creates the object panes for Target and its subobjects. */
 	void RebuildPanes();
 
-	/** The target was replaced (OnObjectsReplaced): CheckTargets rebuilds the panes. */
-	bool bRebuildRequested = false;
+	/** When CheckTargets last looked for added, removed or renamed components. */
+	double LastSignatureCheckTime = 0.0;
 
 	/** Polls for deleted targets and recreated components. Runs as an active timer, outside of Slate's paint pass, so it can safely close or rebuild. */
 	EActiveTimerReturnType CheckTargets(double InCurrentTime, float InDeltaTime);

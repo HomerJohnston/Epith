@@ -99,7 +99,8 @@ void SEpithViewportMasterPane::Construct(const FArguments& InArgs)
 
 	USelection::SelectionChangedEvent.AddSP(this, &SEpithViewportMasterPane::OnSelectionChanged);
 
-	RegisterActiveTimer(0.1f, FWidgetActiveTimerDelegate::CreateSP(this, &SEpithViewportMasterPane::CheckTargets));
+	// Every frame, so a section whose object was just destroyed is replaced before it's seen (see CheckTargets)
+	RegisterActiveTimer(0.0f, FWidgetActiveTimerDelegate::CreateSP(this, &SEpithViewportMasterPane::CheckTargets));
 }
 
 SEpithViewportMasterPane::~SEpithViewportMasterPane()
@@ -202,12 +203,19 @@ EActiveTimerReturnType SEpithViewportMasterPane::CheckTargets(double InCurrentTi
 		return !Pane->HasValidTarget();
 	});
 
-	// A component with a panel definition was added, removed or renamed (by a button, the Details panel, undo, a script...)
-	const bool bPanesChanged = !bAnyPaneStale && MakePaneSignature(Target.Get()) != BuiltPaneSignature;
+	// A component with a panel definition was added, removed or renamed (by a button, the Details panel, undo, a script...).
+	// Looking for that is more work than the check above, and nothing is on screen for a dead object meanwhile, so it's only
+	// done every 0.1 s.
+	bool bPanesChanged = false;
 
-	if (bRebuildRequested || bAnyPaneStale || bPanesChanged)
+	if (!bAnyPaneStale && InCurrentTime - LastSignatureCheckTime >= 0.1)
 	{
-		bRebuildRequested = false;
+		LastSignatureCheckTime = InCurrentTime;
+		bPanesChanged = MakePaneSignature(Target.Get()) != BuiltPaneSignature;
+	}
+
+	if (bAnyPaneStale || bPanesChanged)
+	{
 		RebuildPanes();
 
 		if (!HasPanes())
@@ -222,13 +230,13 @@ EActiveTimerReturnType SEpithViewportMasterPane::CheckTargets(double InCurrentTi
 
 void SEpithViewportMasterPane::OnObjectsReplaced(const TMap<UObject*, UObject*>& ReplacementMap)
 {
-	// Blueprint recompiles replace the actor instance; follow it rather than closing the panel. The panes are rebuilt by the
-	// next CheckTargets, not here: this can fire from inside a property row generator's tick, and rebuilding releases the
-	// panes' generators, which mustn't happen while one ticks.
+	// Blueprint recompiles replace the actor instance; follow it rather than closing the panel. Rebuilt right away, so the
+	// panel never shows a frame of sections for the old actor (the sections release their property rows safely whenever
+	// they're destroyed).
 	if (UObject* const* NewTarget = ReplacementMap.Find(Target.Get(true)))
 	{
 		Target = *NewTarget;
-		bRebuildRequested = true;
+		RebuildPanes();
 	}
 }
 
