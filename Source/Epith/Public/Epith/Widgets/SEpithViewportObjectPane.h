@@ -10,6 +10,9 @@ namespace EpithViewportObjectPane
 {
 	/** The ribbon behind a section's header (and the panel designer's title): a medium gray, #404040. */
 	inline const FLinearColor HeaderRibbonColor = FLinearColor::FromSRGBColor(FColor(64, 64, 64));
+
+	/** The same ribbon while hovered (it's clicked to collapse or expand the section): #4C4C4C. */
+	inline const FLinearColor HeaderRibbonHoverColor = FLinearColor::FromSRGBColor(FColor(76, 76, 76));
 }
 
 class SEpithViewportObjectPane : public SCompoundWidget
@@ -28,6 +31,14 @@ class SEpithViewportObjectPane : public SCompoundWidget
 
 	/** False once the target has been destroyed (deleted, unloaded, or a construction-script component that was recreated). */
 	bool HasValidTarget() const { return Target.IsValid(); }
+
+	/**
+	 * Whether the section's content is showing (clicking its header folds it away). Expanded unless the user collapsed it;
+	 * remembered for this editor session per panel definition and target, so it survives the panel being rebuilt or reopened.
+	 */
+	bool IsExpanded() const;
+
+	void SetExpanded(bool bExpanded);
 
 protected:
 	/** Kept alive while the pane is open. The layout tree is read from it on every Build() and never cached, so editing the asset can't leave us with a dangling pointer. */

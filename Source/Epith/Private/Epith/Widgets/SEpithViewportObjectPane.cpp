@@ -11,6 +11,21 @@
 
 #define LOCTEXT_NAMESPACE "Epith"
 
+namespace EpithViewportObjectPane
+{
+	/**
+	 * Sections the user collapsed, for this editor session. Kept outside the pane, which is recreated whenever the panel
+	 * rebuilds (a component is recreated, the panel is reopened...). See GetSectionKey.
+	 */
+	static TSet<FString> CollapsedSections;
+
+	/** The panel definition and the target's name: the same section of the same actor (or component) after a rebuild. */
+	static FString GetSectionKey(const UEpithPanelDefinition* Definition, const UObject* Target)
+	{
+		return FString::Printf(TEXT("%s|%s"), Definition ? *Definition->GetPathName() : TEXT(""), Target ? *Target->GetName() : TEXT(""));
+	}
+}
+
 void SEpithViewportObjectPane::Construct(const FArguments& InArgs)
 {
 	if (!InArgs._PanelDefinition || !InArgs._Target)
@@ -147,6 +162,25 @@ void SEpithViewportObjectPane::Build()
 	Draw();
 }
 
+bool SEpithViewportObjectPane::IsExpanded() const
+{
+	return !EpithViewportObjectPane::CollapsedSections.Contains(EpithViewportObjectPane::GetSectionKey(PanelDefinition.Get(), Target.Get()));
+}
+
+void SEpithViewportObjectPane::SetExpanded(bool bExpanded)
+{
+	const FString Key = EpithViewportObjectPane::GetSectionKey(PanelDefinition.Get(), Target.Get());
+
+	if (bExpanded)
+	{
+		EpithViewportObjectPane::CollapsedSections.Remove(Key);
+	}
+	else
+	{
+		EpithViewportObjectPane::CollapsedSections.Add(Key);
+	}
+}
+
 void SEpithViewportObjectPane::Draw()
 {
 	TSharedPtr<SWidget> Content;
@@ -185,27 +219,78 @@ void SEpithViewportObjectPane::Draw()
 			Title = PanelDefinition->GetTargetClass()->GetDisplayNameText();
 		}
 
-		// The header sits on a medium-gray ribbon running the full width of the section, flush with its top edge
+		// The header sits on a medium-gray ribbon running the full width of the section, flush with its top edge. Clicking it
+		// folds the section away (a little lighter while hovered, so it reads as clickable); the arrow shows which way it is.
+		TSharedPtr<SBorder> Ribbon;
+
 		Box->AddSlot()
 		.AutoHeight()
 		[
-			SNew(SBorder)
+			SAssignNew(Ribbon, SBorder)
 			.BorderImage(FAppStyle::GetBrush("WhiteBrush"))
-			.BorderBackgroundColor(EpithViewportObjectPane::HeaderRibbonColor)
-			.Padding(FMargin(20, 6, 20, 6))
+			.Padding(FMargin(4, 6, 20, 6))
+			.Cursor(EMouseCursor::Hand)
+			.ToolTipText(LOCTEXT("ObjectPane_FoldTooltip", "Click to collapse or expand this section"))
+			.OnMouseButtonDown_Lambda([this](const FGeometry&, const FPointerEvent& MouseEvent)
+			{
+				if (MouseEvent.GetEffectingButton() != EKeys::LeftMouseButton)
+				{
+					return FReply::Unhandled();
+				}
+
+				SetExpanded(!IsExpanded());
+				return FReply::Handled();
+			})
 			[
-				SNew(SEpithViewportObjectPaneHeader)
-				.Target(Target.Get())
-				.TitleOverride(Title)
+				SNew(SHorizontalBox)
+				+ SHorizontalBox::Slot()
+				.AutoWidth()
+				.VAlign(VAlign_Center)
+				.Padding(0, 0, 0, 0)
+				[
+					SNew(SImage)
+					.Image_Lambda([this]()
+					{
+						return FAppStyle::GetBrush(IsExpanded() ? "TreeArrow_Expanded" : "TreeArrow_Collapsed");
+					})
+					.ColorAndOpacity(FSlateColor::UseForeground())
+				]
+				+ SHorizontalBox::Slot()
+				.FillWidth(1.0f)
+				.VAlign(VAlign_Center)
+				.Padding(4, 0, 0, 0)
+				[
+					SNew(SEpithViewportObjectPaneHeader)
+					.Target(Target.Get())
+					.TitleOverride(Title)
+				]
 			]
 		];
+
+		TWeakPtr<SBorder> WeakRibbon = Ribbon;
+
+		Ribbon->SetBorderBackgroundColor(TAttribute<FSlateColor>::CreateLambda([WeakRibbon]()
+		{
+			TSharedPtr<SBorder> PinnedRibbon = WeakRibbon.Pin();
+			const bool bHovered = PinnedRibbon.IsValid() && PinnedRibbon->IsHovered();
+
+			return FSlateColor(bHovered ? EpithViewportObjectPane::HeaderRibbonHoverColor : EpithViewportObjectPane::HeaderRibbonColor);
+		}));
 	}
 
+	// Collapsed along with its padding, so a folded section is just its header
 	Box->AddSlot()
 	.AutoHeight()
-	.Padding(8)
 	[
-		Content.ToSharedRef()
+		SNew(SBox)
+		.Padding(8)
+		.Visibility_Lambda([this]()
+		{
+			return IsExpanded() ? EVisibility::Visible : EVisibility::Collapsed;
+		})
+		[
+			Content.ToSharedRef()
+		]
 	];
 
 	ChildSlot
