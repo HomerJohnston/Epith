@@ -220,6 +220,11 @@ private:
 struct FEpithViewState
 {
 	TMap<const void*, int32> TabIndices;
+
+	/**
+	 * Set once a foldout has been drawn (whichever way it started) or toggled. Until then it starts folded, unless one of the
+	 * properties inside it has been changed from its default.
+	 */
 	TMap<const void*, bool> FoldoutExpanded;
 };
 
@@ -307,6 +312,15 @@ namespace EpithDraw
 
 	/** True if the slot holds a Divider that draws its bar (bFilled), i.e. one that neighbouring dividers can join. */
 	EPITH_API bool IsFilledDivider(const TInstancedStruct<FEpithWindowElement>& Slot);
+
+	/** Adds the property paths of every Property element in the slot: its own element, and everything nested inside it. */
+	EPITH_API void GatherPropertyPaths(const TInstancedStruct<FEpithWindowElement>& Slot, TSet<FName>& OutPaths);
+
+	/**
+	 * True if any property shown by a Property element in the slot (at any depth) has been changed from its default on the
+	 * object being shown.
+	 */
+	EPITH_API bool HasModifiedProperty(const TInstancedStruct<FEpithWindowElement>& Slot, const FEpithDrawContext& Context);
 
 	/** Remove / move up / move down for entry Index of a group's slot array. */
 	template<typename SlotType>

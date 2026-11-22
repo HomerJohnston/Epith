@@ -3,6 +3,7 @@
 #include "Editor.h"
 #include "Epith/EpithPanelDefinition.h"
 #include "Epith/Misc/EpithPropertyDataContainer.h"
+#include "Epith/Widgets/EpithDrawContext.h"
 #include "Epith/Widgets/EpithWindowElement_Property.h"
 #include "Styling/AppStyle.h"
 #include "Styling/StyleColors.h"
@@ -240,67 +241,13 @@ TSharedRef<SWidget> EpithPropertyMenu::MakeMessage(const FText& Message)
 		];
 }
 
-namespace EpithPropertyMenuPrivate
-{
-	void GatherFromStruct(const UScriptStruct* Struct, const void* Data, TSet<FName>& OutPaths, int32 Depth);
-
-	void GatherFromValue(const FProperty* Property, const void* Value, TSet<FName>& OutPaths, int32 Depth)
-	{
-		if (const FStructProperty* StructProperty = CastField<FStructProperty>(Property))
-		{
-			// Child elements live in instanced structs (TInstancedStruct is laid out as an FInstancedStruct)
-			if (StructProperty->Struct == FInstancedStruct::StaticStruct())
-			{
-				const FInstancedStruct* Instanced = static_cast<const FInstancedStruct*>(Value);
-				GatherFromStruct(Instanced->GetScriptStruct(), Instanced->GetMemory(), OutPaths, Depth + 1);
-			}
-			else
-			{
-				GatherFromStruct(StructProperty->Struct, Value, OutPaths, Depth + 1);
-			}
-		}
-		else if (const FArrayProperty* ArrayProperty = CastField<FArrayProperty>(Property))
-		{
-			FScriptArrayHelper Array(ArrayProperty, Value);
-
-			for (int32 i = 0; i < Array.Num(); ++i)
-			{
-				GatherFromValue(ArrayProperty->Inner, Array.GetRawPtr(i), OutPaths, Depth + 1);
-			}
-		}
-	}
-
-	void GatherFromStruct(const UScriptStruct* Struct, const void* Data, TSet<FName>& OutPaths, int32 Depth)
-	{
-		if (!Struct || !Data || Depth > 64)
-		{
-			return;
-		}
-
-		if (Struct->IsChildOf(FEpithWindowElement_Property::StaticStruct()))
-		{
-			const FName Path = static_cast<const FEpithWindowElement_Property*>(Data)->PropertySelector.GetPropertyPath();
-
-			if (!Path.IsNone())
-			{
-				OutPaths.Add(Path);
-			}
-		}
-
-		for (TFieldIterator<FProperty> It(Struct); It; ++It)
-		{
-			GatherFromValue(*It, It->ContainerPtrToValuePtr<void>(Data), OutPaths, Depth);
-		}
-	}
-}
-
 TSet<FName> EpithPropertyMenu::GatherUsedPaths(const UEpithPanelDefinition* Definition)
 {
 	TSet<FName> Paths;
 
 	if (const TInstancedStruct<FEpithWindowElement>* Root = Definition ? Definition->GetRoot() : nullptr)
 	{
-		EpithPropertyMenuPrivate::GatherFromStruct(Root->GetScriptStruct(), Root->GetMemory(), Paths, 0);
+		EpithDraw::GatherPropertyPaths(*Root, Paths);
 	}
 
 	return Paths;

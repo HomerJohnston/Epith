@@ -4,8 +4,9 @@
 #include "Epith/EpithLog.h"
 #include "UObject/UObjectGlobals.h"
 
-FEpithPropertyDataContainer::FEpithPropertyDataContainer(UObject* InTarget, TSharedPtr<TSet<FName>> InExpandedPaths)
-	: ExpandedPaths(InExpandedPaths)
+FEpithPropertyDataContainer::FEpithPropertyDataContainer(UObject* InTarget, TSharedPtr<TSet<FName>> InExpandedPaths, bool bInReadOnly)
+	: bReadOnly(bInReadOnly)
+	, ExpandedPaths(InExpandedPaths)
 {
 	if (!IsValid(InTarget))
 	{
@@ -79,7 +80,12 @@ void FEpithPropertyDataContainer::Build(TStrongObjectPtr<UObject> BuildTarget)
 	static const FName PropertyEditorName = "PropertyEditor";
 
 	FPropertyEditorModule& PropertyEditor = FModuleManager::Get().LoadModuleChecked<FPropertyEditorModule>(PropertyEditorName);
-	PropertyRowGenerator = PropertyEditor.CreatePropertyRowGenerator(FPropertyRowGeneratorArgs());
+	FPropertyRowGeneratorArgs Args;
+
+	// Read-only panels show class defaults: the engine's own value widgets then refuse edits too (ours are disabled as well)
+	Args.bAllowEditingClassDefaultObjects = !bReadOnly;
+
+	PropertyRowGenerator = PropertyEditor.CreatePropertyRowGenerator(Args);
 	PropertyRowGenerator->SetObjects( { BuildTarget.Get() } );
 	PropertyRowGenerator->OnRowsRefreshed().AddRaw(this, &FEpithPropertyDataContainer::HandleRowsRefreshed);
 	

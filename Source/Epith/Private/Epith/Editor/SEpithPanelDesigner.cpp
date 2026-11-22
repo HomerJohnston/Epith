@@ -1534,7 +1534,8 @@ void SEpithPanelDesigner::RedrawRealView()
 	}
 
 	// The viewport's own section widget, given the class defaults (the designer's preview object) and this definition, and no
-	// designer: exactly what a level object's panel draws, so the two can't drift apart
+	// designer: exactly what a level object's panel draws, so the two can't drift apart. Read-only: it's for looking at, and
+	// editing here would change the class defaults.
 	RealViewArea->SetContent(
 		SNew(SBox)
 		.HAlign(HAlign_Center)
@@ -1548,6 +1549,7 @@ void SEpithPanelDesigner::RedrawRealView()
 				SNew(SEpithViewportObjectPane)
 				.Target(TargetClass->GetDefaultObject())
 				.PanelDefinition(PanelDefinition)
+				.bReadOnly(true)
 			]
 		]);
 }

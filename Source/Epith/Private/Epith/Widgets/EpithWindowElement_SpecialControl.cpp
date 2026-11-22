@@ -18,6 +18,12 @@ TSharedPtr<SWidget> FEpithWindowElement_SpecialControl::Draw(const FEpithDrawCon
 	
 	if (!Context.IsDesigning())
 	{
+		// A look-only panel (the designer's REAL VIEW): a control could do anything to the target, so it's shown disabled
+		if (ControlWidget.IsValid() && Context.PropertyData.IsValid() && Context.PropertyData->IsReadOnly())
+		{
+			ControlWidget->SetEnabled(false);
+		}
+
 		return ControlWidget;
 	}
 	

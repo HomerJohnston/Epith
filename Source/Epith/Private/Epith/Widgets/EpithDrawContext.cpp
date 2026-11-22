@@ -3,7 +3,11 @@
 #include "Epith/Widgets/EpithWindowElement_Divider.h"
 
 #include "CoreGlobals.h"
+#include "Epith/Misc/EpithPropertyDataContainer.h"
 #include "Epith/Widgets/EpithWindowElement.h"
+#include "Epith/Widgets/EpithWindowElement_Property.h"
+#include "PropertyHandle.h"
+#include "StructUtils/InstancedStruct.h"
 #include "Widgets/SNullWidget.h"
 #include "Widgets/SWidget.h"
 
@@ -122,6 +126,89 @@ FEpithDrawContext FEpithDrawContext::WithColumns(const FEpithColumnSettings& Set
 	ChildContext.RowEdges = FEpithRowEdges::Standalone();
 	ChildContext.Columns = MakeShared<FEpithColumnLayout>(Settings.NameColumnFraction, &Settings);
 	return ChildContext;
+}
+
+namespace EpithDrawPrivate
+{
+	void GatherFromStruct(const UScriptStruct* Struct, const void* Data, TSet<FName>& OutPaths, int32 Depth);
+
+	void GatherFromValue(const FProperty* Property, const void* Value, TSet<FName>& OutPaths, int32 Depth)
+	{
+		if (const FStructProperty* StructProperty = CastField<FStructProperty>(Property))
+		{
+			// Child elements live in instanced structs (TInstancedStruct is laid out as an FInstancedStruct)
+			if (StructProperty->Struct == FInstancedStruct::StaticStruct())
+			{
+				const FInstancedStruct* Instanced = static_cast<const FInstancedStruct*>(Value);
+				GatherFromStruct(Instanced->GetScriptStruct(), Instanced->GetMemory(), OutPaths, Depth + 1);
+			}
+			else
+			{
+				GatherFromStruct(StructProperty->Struct, Value, OutPaths, Depth + 1);
+			}
+		}
+		else if (const FArrayProperty* ArrayProperty = CastField<FArrayProperty>(Property))
+		{
+			FScriptArrayHelper Array(ArrayProperty, Value);
+
+			for (int32 i = 0; i < Array.Num(); ++i)
+			{
+				GatherFromValue(ArrayProperty->Inner, Array.GetRawPtr(i), OutPaths, Depth + 1);
+			}
+		}
+	}
+
+	void GatherFromStruct(const UScriptStruct* Struct, const void* Data, TSet<FName>& OutPaths, int32 Depth)
+	{
+		if (!Struct || !Data || Depth > 64)
+		{
+			return;
+		}
+
+		if (Struct->IsChildOf(FEpithWindowElement_Property::StaticStruct()))
+		{
+			const FName Path = static_cast<const FEpithWindowElement_Property*>(Data)->PropertySelector.GetPropertyPath();
+
+			if (!Path.IsNone())
+			{
+				OutPaths.Add(Path);
+			}
+		}
+
+		for (TFieldIterator<FProperty> It(Struct); It; ++It)
+		{
+			GatherFromValue(*It, It->ContainerPtrToValuePtr<void>(Data), OutPaths, Depth);
+		}
+	}
+}
+
+void EpithDraw::GatherPropertyPaths(const TInstancedStruct<FEpithWindowElement>& Slot, TSet<FName>& OutPaths)
+{
+	EpithDrawPrivate::GatherFromStruct(Slot.GetScriptStruct(), Slot.GetMemory(), OutPaths, 0);
+}
+
+bool EpithDraw::HasModifiedProperty(const TInstancedStruct<FEpithWindowElement>& Slot, const FEpithDrawContext& Context)
+{
+	if (!Context.PropertyData.IsValid())
+	{
+		return false;
+	}
+
+	TSet<FName> Paths;
+	GatherPropertyPaths(Slot, Paths);
+
+	for (const FName Path : Paths)
+	{
+		// The same test as the Details panel's "reset to default" arrow. For a struct or an array, any change inside counts.
+		TSharedPtr<IPropertyHandle> Handle = Context.PropertyData->FindPropertyHandle(Path);
+
+		if (FEpithPropertyDataContainer::HasDefaultToCompare(Handle) && Handle->DiffersFromDefault())
+		{
+			return true;
+		}
+	}
+
+	return false;
 }
 
 bool EpithDraw::IsFilledDivider(const TInstancedStruct<FEpithWindowElement>& Slot)

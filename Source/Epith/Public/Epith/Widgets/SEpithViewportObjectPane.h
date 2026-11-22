@@ -17,11 +17,16 @@ namespace EpithViewportObjectPane
 
 class SEpithViewportObjectPane : public SCompoundWidget
 {
-	SLATE_BEGIN_ARGS(SEpithViewportObjectPane) {}
+	SLATE_BEGIN_ARGS(SEpithViewportObjectPane)
+		: _bReadOnly(false)
+		{}
 
 		SLATE_ARGUMENT(UObject*, Target)
 
 		SLATE_ARGUMENT(UEpithPanelDefinition*, PanelDefinition)
+
+		/** Look-only: nothing in the section can change Target (the designer's REAL VIEW, which shows the class defaults). */
+		SLATE_ARGUMENT(bool, bReadOnly)
 
 	SLATE_END_ARGS()
 
@@ -46,6 +51,8 @@ protected:
 	TStrongObjectPtr<UEpithPanelDefinition> PanelDefinition;
 
 	TWeakObjectPtr<UObject> Target;
+
+	bool bReadOnly = false;
 
 	TSharedPtr<FEpithPropertyDataContainer> PropertyData;
 

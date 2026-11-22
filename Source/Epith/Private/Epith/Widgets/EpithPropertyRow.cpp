@@ -344,7 +344,8 @@ namespace EpithPropertyRow
 				return ResetOverride.GetValue().IsResetToDefaultVisible(Handle);
 			}
 
-			return !bNoResetToDefault && Handle->CanResetToDefault();
+			// HasDefaultToCompare first: without a default, asking the engine can crash (see there)
+			return !bNoResetToDefault && FEpithPropertyDataContainer::HasDefaultToCompare(Handle) && Handle->CanResetToDefault();
 		};
 
 		return SNew(SBox)
@@ -632,6 +633,9 @@ namespace EpithPropertyRow
 		const bool bAlwaysExpanded = Mode == EEpithPropertyChildDisplay::AlwaysExpanded;
 
 
+		// A look-only panel (the designer's REAL VIEW): everything that edits is disabled; expanding rows still works
+		const bool bEditable = !PropertyData->IsReadOnly();
+
 		// Everything left of the value: indent, expander, edit-condition toggle, name. In a group this whole area gets the
 		// group's shared name-column width, so values line up even for nested (indented) rows, like the Details panel.
 		TSharedRef<SHorizontalBox> NameArea = SNew(SHorizontalBox);
@@ -762,7 +766,11 @@ namespace EpithPropertyRow
 			.VAlign(VAlign_Center)
 			.Padding(0, 0, 4, 0)
 			[
-				MakeEditConditionToggle(Row)
+				SNew(SBox)
+				.IsEnabled(bEditable)
+				[
+					MakeEditConditionToggle(Row)
+				]
 			];
 		}
 
@@ -806,7 +814,11 @@ namespace EpithPropertyRow
 			.AutoWidth()
 			.VAlign(VAlign_Center)
 			[
-				Row.WholeRowWidget.Widget
+				SNew(SBox)
+				.IsEnabled(bEditable)
+				[
+					Row.WholeRowWidget.Widget
+				]
 			];
 		}
 
@@ -839,6 +851,7 @@ namespace EpithPropertyRow
 				.VAlign(VAlign_Center)
 				.Padding(FMargin(12, RowVerticalPadding, 4, RowVerticalPadding))
 				.Clipping(EWidgetClipping::ClipToBounds)
+				.IsEnabled(bEditable)
 				[
 					ValueWidget.ToSharedRef()
 				]
@@ -879,6 +892,7 @@ namespace EpithPropertyRow
 				SNew(SBox)
 				.WidthOverride(ResetColumnWidth)
 				.HAlign(HAlign_Center)
+				.IsEnabled(bEditable)
 				[
 					bHasResetButton ? MakeResetToDefaultButton(Handle.ToSharedRef(), Row) : SNullWidget::NullWidget
 				]

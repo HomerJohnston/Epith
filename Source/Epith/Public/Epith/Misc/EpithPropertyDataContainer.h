@@ -7,16 +7,27 @@
 struct FEpithPropertyDataContainer
 {
 public:
-	/** @param InExpandedPaths Which rows are expanded. Pass the same set to each rebuilt container so expansion survives rebuilds. */
-	FEpithPropertyDataContainer(UObject* InTarget, TSharedPtr<TSet<FName>> InExpandedPaths = nullptr);
+	/**
+	 * @param InExpandedPaths Which rows are expanded. Pass the same set to each rebuilt container so expansion survives rebuilds.
+	 * @param bInReadOnly The rows only show values: nothing drawn from this container can change the target (see IsReadOnly).
+	 */
+	FEpithPropertyDataContainer(UObject* InTarget, TSharedPtr<TSet<FName>> InExpandedPaths = nullptr, bool bInReadOnly = false);
 
 	~FEpithPropertyDataContainer();
 
 	/** The object whose properties this container shows. */
 	UObject* GetTarget() const { return Target.Get(); }
 
+	/**
+	 * True for a look-only panel (the designer's REAL VIEW, which shows the class defaults). Everything that could change the
+	 * target is disabled: values, reset arrows, edit-condition toggles and special controls. Rows can still be expanded.
+	 */
+	bool IsReadOnly() const { return bReadOnly; }
+
 protected:
 	TWeakObjectPtr<UObject> Target;
+
+	bool bReadOnly = false;
 
 	TSharedPtr<class IPropertyRowGenerator> PropertyRowGenerator;
 
@@ -83,6 +94,57 @@ public:
 		{
 			ExpandedPaths->Remove(Path);
 		}
+	}
+
+	/**
+	 * Whether it's safe to ask the handle if it differs from its default (DiffersFromDefault, CanResetToDefault).
+	 *
+	 * The default comes from the object's archetype: for a placed object its class defaults, but for a class default object the
+	 * PARENT class's defaults, which don't have a property the class itself adds. The engine checks for that on ordinary
+	 * properties, but not on the members of an instanced struct, where it reads the missing property out of the parent's memory
+	 * anyway and crashes. So: false if any object being shown has an archetype without the handle's outermost property (there
+	 * is no default to compare with, so nothing differs and nothing can be reset).
+	 */
+	static bool HasDefaultToCompare(TSharedPtr<IPropertyHandle> PropertyHandle)
+	{
+		if (!PropertyHandle.IsValid() || !PropertyHandle->IsValidHandle())
+		{
+			return false;
+		}
+
+		// The outermost property in the chain: the one on the object itself
+		const FProperty* TopProperty = nullptr;
+
+		for (TSharedPtr<IPropertyHandle> Current = PropertyHandle; Current.IsValid(); Current = Current->GetParentHandle())
+		{
+			if (const FProperty* Property = Current->GetProperty())
+			{
+				TopProperty = Property;
+			}
+		}
+
+		const UClass* OwnerClass = TopProperty ? TopProperty->GetOwnerClass() : nullptr;
+
+		// Not a property of an object's class (a standalone struct, say): nothing for us to check
+		if (!OwnerClass)
+		{
+			return true;
+		}
+
+		TArray<UObject*> OuterObjects;
+		PropertyHandle->GetOuterObjects(OuterObjects);
+
+		for (const UObject* Object : OuterObjects)
+		{
+			const UObject* Archetype = Object ? Object->GetArchetype() : nullptr;
+
+			if (!Archetype || !Archetype->IsA(OwnerClass))
+			{
+				return false;
+			}
+		}
+
+		return true;
 	}
 
 	/**

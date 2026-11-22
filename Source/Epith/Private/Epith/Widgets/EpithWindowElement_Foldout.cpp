@@ -30,14 +30,33 @@ TSharedPtr<SWidget> FEpithWindowElement_Foldout::Draw(const FEpithDrawContext& C
 	TWeakPtr<FEpithViewState> WeakViewState = Context.ViewState;
 	const bool* SavedExpanded = Context.ViewState.IsValid() ? Context.ViewState->FoldoutExpanded.Find(StateKey) : nullptr;
 
+	bool bExpanded = true;
+
+	if (SavedExpanded)
+	{
+		bExpanded = *SavedExpanded;
+	}
+	else
+	{
+		// The first time it's shown (the panel just opened): folded, unless something inside has been changed from its default,
+		// so the changes on this object are what you see first. Always open in the designer, where it's being worked on.
+		bExpanded = Context.IsDesigning() || EpithDraw::HasModifiedProperty(Element, Context);
+
+		// Remembered, so a later redraw doesn't fold it (or pop it open) as values change
+		if (Context.ViewState.IsValid())
+		{
+			Context.ViewState->FoldoutExpanded.Add(StateKey, bExpanded);
+		}
+	}
+
 	TSharedRef<SExpandableArea> ExpandableArea = SNew(SExpandableArea)
 	.AreaTitle(FText::FromString(FoldoutTitle))
-	.InitiallyCollapsed(SavedExpanded ? !*SavedExpanded : false)
-	.OnAreaExpansionChanged_Lambda([WeakViewState, StateKey](bool bExpanded)
+	.InitiallyCollapsed(!bExpanded)
+	.OnAreaExpansionChanged_Lambda([WeakViewState, StateKey](bool bNowExpanded)
 	{
 		if (TSharedPtr<FEpithViewState> ViewState = WeakViewState.Pin())
 		{
-			ViewState->FoldoutExpanded.Add(StateKey, bExpanded);
+			ViewState->FoldoutExpanded.Add(StateKey, bNowExpanded);
 		}
 	})
 	.AllowAnimatedTransition(false)

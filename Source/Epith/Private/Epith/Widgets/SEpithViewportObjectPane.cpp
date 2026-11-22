@@ -57,6 +57,7 @@ void SEpithViewportObjectPane::Construct(const FArguments& InArgs)
 
 	PanelDefinition.Reset(InArgs._PanelDefinition);
 	Target = InArgs._Target;
+	bReadOnly = InArgs._bReadOnly;
 
 	FCoreUObjectDelegates::OnObjectsReplaced.AddSP(this, &SEpithViewportObjectPane::OnObjectsReinstanced);
 	FCoreUObjectDelegates::OnObjectPropertyChanged.AddSP(this, &SEpithViewportObjectPane::OnObjectPropertyChanged);
@@ -175,7 +176,7 @@ void SEpithViewportObjectPane::Build()
 
 	if (Target.IsValid())
 	{
-		PropertyData = MakeShared<FEpithPropertyDataContainer>(Target.Get(), ExpandedPaths);
+		PropertyData = MakeShared<FEpithPropertyDataContainer>(Target.Get(), ExpandedPaths, bReadOnly);
 		PropertyData->OnStructureChanged.AddSP(this, &SEpithViewportObjectPane::RequestRebuild);
 	}
 
